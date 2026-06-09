@@ -64,6 +64,7 @@ def test_voice_turn_logs_lifecycle_without_transcript(
     assert all(event["organization_slug"] == "tenant-demo" for event in events)
     assert caller_text not in caplog.text
     assert events[0]["input_length"] == len(caller_text)
+    assert events[1]["language"] == "en-US"
 
 
 def test_voice_turn_scopes_knowledge_search_to_resolved_organization(

@@ -121,6 +121,13 @@ def test_search_supports_english_bangla_banglish_and_basic_fuzzy_queries(
         tags=["অফিস", "সময়"],
         status="approved",
     )
+    closing_time = storage.create_knowledge_item(
+        question="What time does the office close?",
+        answer="The office closes at the published closing time.",
+        language="en-US",
+        tags=["office", "hours", "closing"],
+        status="approved",
+    )
     db_session.commit()
 
     english_result = search_knowledge(
@@ -133,6 +140,16 @@ def test_search_supports_english_bangla_banglish_and_basic_fuzzy_queries(
         organization.id,
         "CSE fee koto",
     )
+    banglish_documents_result = search_knowledge(
+        db_session,
+        organization.id,
+        "admission er jonno ki ki lagbe",
+    )
+    sylhet_result = search_knowledge(
+        db_session,
+        organization.id,
+        "afne admissionor lagi kita lagbo",
+    )
     bangla_result = search_knowledge(
         db_session,
         organization.id,
@@ -143,14 +160,25 @@ def test_search_supports_english_bangla_banglish_and_basic_fuzzy_queries(
         organization.id,
         "অফিস কখন",
     )
+    banglish_office_result = search_knowledge(
+        db_session,
+        organization.id,
+        "office koytay bondho",
+    )
 
     assert english_result.source_id == documents.id
     assert english_result.confidence >= 0.65
     assert banglish_result.source_id == cse_fee.id
     assert banglish_result.confidence >= 0.65
+    assert banglish_documents_result.source_id == documents.id
+    assert banglish_documents_result.confidence >= 0.65
+    assert sylhet_result.source_id == documents.id
+    assert sylhet_result.confidence >= 0.65
     assert bangla_result.source_id == admission_fee.id
     assert bangla_result.confidence >= 0.65
     assert bangla_office_result.source_id == office.id
+    assert banglish_office_result.source_id == closing_time.id
+    assert banglish_office_result.confidence >= 0.65
 
 
 def test_search_honors_optional_branch_scope(db_session: Session) -> None:

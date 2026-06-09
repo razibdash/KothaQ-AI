@@ -1,5 +1,16 @@
+from app.services.language.language_router import (
+    choose_response_language,
+    detect_language,
+    normalize_text,
+)
+
+__all__ = [
+    "choose_response_language",
+    "detect_language",
+    "detect_language_mode",
+    "normalize_text",
+]
+
+
 def detect_language_mode(text: str) -> str:
-    ascii_ratio = sum(1 for c in text if ord(c) < 128) / max(len(text), 1)
-    if ascii_ratio > 0.8:
-        return "bn-Latn"
-    return "bn-BD"
+    return detect_language(text)

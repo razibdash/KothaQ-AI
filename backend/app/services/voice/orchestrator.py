@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger, log_event
 from app.services.ai.answer_policy import enforce_verified_answer_policy
 from app.services.knowledge.search import search_knowledge
-from app.services.language.router import detect_language_mode
+from app.services.language.language_router import choose_response_language
 from app.services.tenancy import OrganizationContext
 
 logger = get_logger(__name__)
@@ -35,7 +35,11 @@ class VoiceOrchestrator:
                 input_length=len(caller_text),
             )
 
-            language = detect_language_mode(caller_text)
+            language = choose_response_language(
+                caller_text,
+                organization.default_language,
+                organization.supported_languages,
+            )
             log_event(
                 logger,
                 logging.INFO,

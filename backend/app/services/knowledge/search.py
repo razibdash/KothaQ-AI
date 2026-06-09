@@ -1,4 +1,3 @@
-import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from uuid import UUID
@@ -8,80 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.models.branch import Branch
 from app.models.knowledge_item import KnowledgeItem
+from app.services.language.language_router import detect_language, normalize_text
 
 VERIFIED_CONFIDENCE_THRESHOLD = 0.65
-TERM_ALIASES = {
-    "admission": "admission",
-    "admissions": "admission",
-    "bhorti": "admission",
-    "vorti": "admission",
-    "ভর্তি": "admission",
-    "fee": "fee",
-    "fees": "fee",
-    "cost": "fee",
-    "খরচ": "fee",
-    "ফি": "fee",
-    "document": "document",
-    "documents": "document",
-    "papers": "document",
-    "কাগজ": "document",
-    "scholarship": "scholarship",
-    "বৃত্তি": "scholarship",
-    "waiver": "waiver",
-    "office": "office",
-    "অফিস": "office",
-    "hour": "hours",
-    "hours": "hours",
-    "time": "hours",
-    "kokhon": "hours",
-    "কখন": "hours",
-    "সময়": "hours",
-    "সময়": "hours",
-    "location": "location",
-    "address": "location",
-    "where": "location",
-    "kothay": "location",
-    "কোথায়": "location",
-    "ঠিকানা": "location",
-    "program": "program",
-    "programs": "program",
-    "course": "program",
-    "courses": "program",
-    "বিষয়": "program",
-    "deadline": "deadline",
-    "শেষ": "deadline",
-    "payment": "payment",
-    "pay": "payment",
-    "পেমেন্ট": "payment",
-    "যোগাযোগ": "contact",
-    "contact": "contact",
-    "callback": "callback",
-    "call": "callback",
-}
-STOP_WORDS = {
-    "a",
-    "an",
-    "are",
-    "can",
-    "do",
-    "does",
-    "for",
-    "how",
-    "i",
-    "is",
-    "me",
-    "of",
-    "please",
-    "the",
-    "to",
-    "what",
-    "which",
-    "with",
-    "koto",
-    "কত",
-    "কি",
-    "কী",
-}
 
 
 @dataclass(frozen=True)
@@ -95,24 +23,8 @@ class KnowledgeSearchResult:
         return cls(answer=None, confidence=confidence, source_id=None)
 
 
-def _tokenize_search_text(text: str) -> list[str]:
-    searchable = "".join(
-        character
-        if unicodedata.category(character)[0] in {"L", "M", "N"}
-        else " "
-        for character in text
-    )
-    return searchable.split()
-
-
 def normalize_search_text(text: str) -> str:
-    normalized = unicodedata.normalize("NFKC", text).casefold()
-    tokens = [
-        TERM_ALIASES.get(token, token)
-        for token in _tokenize_search_text(normalized)
-        if token not in STOP_WORDS
-    ]
-    return " ".join(tokens)
+    return normalize_text(text, detect_language(text))
 
 
 def _score_candidate(query: str, item: KnowledgeItem) -> float:
