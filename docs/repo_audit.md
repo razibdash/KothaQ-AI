@@ -171,7 +171,7 @@ mandatory before implementing knowledge, voice, or dashboard features.
     different repository directory name, and the architecture document is a
     conceptual flow rather than a record of current implementation.
 
-## Area Assessments
+## System Assessments
 
 ### Backend
 
@@ -187,6 +187,33 @@ Every model containing organization-owned data should carry a non-null
 also be constrained to the parent organization. Service methods should accept
 the trusted tenant context rather than a tenant identifier supplied directly
 by an untrusted client.
+
+### DB and Storage
+
+PostgreSQL with pgvector and Redis are declared in Compose, but neither is used
+by the application. SQLAlchemy models, session management, and Alembic are
+placeholders, and there are no migrations or storage tests. Every tenant-owned
+record needs a non-null `organization_id`, database constraints and indexes,
+and query APIs that require trusted tenant context. Knowledge also needs an
+approval state so retrieval cannot use draft or unapproved content.
+
+### Voice Webhook
+
+The incoming-call route returns basic XML, so the route itself is reachable
+once the backend runs. It does not validate provider signatures, resolve a
+trusted organization, escape XML values, invoke the orchestrator, persist call
+turns, enforce verified answers, log unknown questions, capture leads, or
+create a handoff. These controls should be implemented and tested together
+before exposing the webhook publicly.
+
+### Language
+
+The repository contains an ASCII-ratio language router, a small Banglish term
+map, and a Sylhet-friendly lexicon. They are useful prototypes but are not
+integrated into the voice flow. English is likely to be misclassified as
+Banglish, punctuation and spelling variants are not normalized, and there is
+no language confidence or fallback strategy. Tests should be driven by the
+sample multilingual questions in `shared/sample-data/`.
 
 ### Frontend
 
@@ -204,12 +231,28 @@ schemas stabilize. It currently describes future behavior rather than the
 implemented API and does not define authentication, tenant context, request
 bodies, responses, errors, pagination, or idempotency.
 
-### Infrastructure
+### Tests
+
+There is one backend test for `GET /health`. No tests cover services,
+persistence, tenant isolation, API authorization, voice provider validation,
+language behavior, verified-answer fallback, unknown-question logging, lead
+capture, handoff, or frontend behavior. CI currently executes no tests.
+
+### Deployment
 
 The Compose topology is sensible for local development, but service hostnames,
 health checks, startup/migration behavior, and secret handling need work.
 Docker builds should use lockable project dependencies. Nginx and Terraform are
 placeholders and should not be treated as deployable production configuration.
+
+### Security
+
+Authentication, authorization, organization membership, role checks, tenant
+resolution, provider webhook verification, rate limiting, and audit logging
+are absent. `SECRET_KEY` has an unsafe default, browser CORS/proxy behavior is
+undefined, and generated XML is not escaped. The highest production risk is
+adding persistence or public webhooks before tenant and trust boundaries are
+mandatory at API, service, and database layers.
 
 ### Documentation
 
@@ -219,65 +262,54 @@ confidence policy, unknown-question lifecycle, handoff states, or multilingual
 acceptance criteria. Those decisions should be documented alongside the first
 persistence and service implementations.
 
-## Validation Performed
+## Current Test and Build Results
 
-| Command | Result |
-| --- | --- |
-| `git status --short` | Passed before the audit; worktree was clean |
-| `python -m pytest -q` from `backend/` | Not run: `python` is unavailable in this environment |
-| `py -3 -m pytest -q` from `backend/` | Not run: Windows Python launcher is unavailable |
-| `python -m compileall -q app` | Not run: Python is unavailable |
-| `npm run build` from `frontend/` | Not run successfully: dependencies are not installed, so `next` is unavailable |
+| Check or test | Command | Result |
+| --- | --- | --- |
+| Tracked worktree baseline | `git status --short` | Passed at initial audit; clean |
+| Backend health test | `python -m pytest -q` from `backend/` | Not executed: `python` is unavailable |
+| Backend health test, launcher fallback | `py -3 -m pytest -q` from `backend/` | Not executed: `py` is unavailable |
+| Backend syntax compilation | `python -m compileall -q app` | Not executed: Python is unavailable |
+| Frontend production build | `npm run build` from `frontend/` | Failed to start: dependencies are not installed and `next` is unavailable |
+| Markdown whitespace validation | `git diff --check` | Passed |
 
 Because Python could not be executed, the existing health test was not
-validated during this audit. The syntax defect in `call_summary.py` was found
-by direct source inspection.
+validated during this audit, so no backend test can currently be reported as
+passing or failing. The syntax defect in `call_summary.py` was found by direct
+source inspection and would fail import/compilation when Python is available.
 
-## Recommended Delivery Phases
+## Recommended Next 10 Tasks
 
-### Phase 1: Establish a Safe Backend Baseline
-
-- Fix the backend syntax defect.
-- Pin/install development dependencies and make backend tests runnable.
-- Replace placeholder CI with backend lint, compile/type checks, and tests.
-- Define authenticated actor and tenant-context interfaces.
-- Add tests that fail when tenant context is absent or mismatched.
-
-### Phase 2: Tenant-Safe Persistence
-
-- Implement SQLAlchemy base/session management.
-- Add Organization and Branch models first.
-- Define ownership constraints for every organization-owned entity.
-- Add an initial Alembic migration and database test fixtures.
-- Test cross-tenant read/write denial before adding business CRUD.
-
-### Phase 3: Approved Knowledge and Unknown Questions
-
-- Implement tenant-scoped knowledge CRUD with draft/approved status.
-- Implement tenant-scoped search with source attribution.
-- Persist low-confidence questions and expose a review/approval workflow.
-- Add English, Bangla, Banglish, and Sylhet-oriented policy tests.
-
-### Phase 4: Voice and Handoff
-
-- Validate telephony signatures and resolve the tenant from trusted routing.
-- Move webhook behavior through the orchestrator and telephony adapter.
-- Escape provider output and make webhook processing idempotent.
-- Store calls/turns, apply answer policy, and create handoff records.
-
-### Phase 5: Authenticated Dashboard
-
-- Add authentication and organization membership/role handling.
-- Build reusable feature modules around the versioned API.
-- Add knowledge, calls, leads, unknown-question, and settings workflows.
-- Add frontend unit/component tests and an end-to-end tenant isolation flow.
-
-### Phase 6: Operations and Deployment
-
-- Correct Compose service URLs and add health checks/migration startup.
-- Add structured logs, request IDs, metrics, rate limits, and readiness checks.
-- Harden secret validation, CORS/proxy policy, nginx, and deployment templates.
-- Add backup, restore, incident, and key-rotation runbooks.
+1. **Restore a green development baseline.** Fix the syntax defect, install
+   pinned backend/frontend dependencies, add lockfiles or constraints, and
+   document commands that work on Windows and Unix.
+2. **Make CI enforce quality.** Run backend compilation, lint/type checks and
+   pytest, plus frontend type checking/build, instead of the placeholder echo.
+3. **Define authentication and trusted tenant context.** Model authenticated
+   actors, organization membership, and roles; reject requests without valid
+   tenant context.
+4. **Implement tenant-safe persistence.** Add SQLAlchemy session/base,
+   Organization and Branch models, Alembic migration, constraints, indexes,
+   and cross-tenant denial tests.
+5. **Implement approved knowledge management.** Add tenant-scoped knowledge
+   CRUD, approval/publish states, source metadata, and tests that exclude
+   unapproved or foreign-tenant content.
+6. **Implement multilingual routing and normalization.** Distinguish Bangla,
+   English, Banglish, and Sylhet-friendly inputs with confidence/fallback and
+   fixture-driven tests.
+7. **Build verified knowledge search and answer policy.** Return source and
+   confidence, prohibit unsupported answers, and localize low-confidence
+   responses.
+8. **Implement the unknown-question and handoff lifecycle.** Persist unknowns
+   with tenant/call context, support review and approval, and create trackable
+   human handoff records.
+9. **Harden and connect the voice webhook.** Verify provider signatures,
+   resolve tenants through trusted routing, escape XML, ensure idempotency,
+   invoke orchestration, and persist calls/turns, leads, and usage.
+10. **Connect and operationalize the dashboard.** Add authenticated,
+    role-aware feature pages and API modules, then correct Compose hostnames,
+    configure CORS/proxy behavior, health/readiness checks, logs, metrics,
+    rate limits, backups, and deployment runbooks.
 
 ## Definition of Ready for Feature Work
 
@@ -291,9 +323,5 @@ Feature development should begin only when the affected path has:
 - unknown-answer/handoff behavior where knowledge confidence is involved; and
 - CI execution of the relevant checks.
 
-## Next Recommended Task
-
-Implement Phase 1 as a narrowly scoped backend quality and tenant-safety
-foundation: fix the syntax error, make tests and CI executable, introduce a
-trusted tenant-context interface, and add tests proving tenant context is
-required. Do not add business CRUD until that boundary is established.
+The immediate next task is item 1. Business CRUD should not begin until items
+1 through 4 establish executable tests and a mandatory tenant boundary.
