@@ -20,10 +20,19 @@ class SpeechProvider(StrEnum):
     TWILIO = "twilio"
 
 
+class LogLevel(StrEnum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
 class Settings(BaseSettings):
     APP_ENV: AppEnvironment = AppEnvironment.LOCAL
     APP_NAME: str = "Voice Agent SaaS"
     API_V1_PREFIX: str = "/api/v1"
+    LOG_LEVEL: LogLevel = LogLevel.INFO
     DATABASE_URL: str = "sqlite:///./local.db"
     REDIS_URL: str = "redis://localhost:6379/0"
     SECRET_KEY: str = "change-me"
