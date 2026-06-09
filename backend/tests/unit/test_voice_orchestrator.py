@@ -1,10 +1,13 @@
 import logging
+from unittest.mock import Mock
 from uuid import UUID
 
 import pytest
 from pytest import LogCaptureFixture, MonkeyPatch
+from sqlalchemy.orm import Session
 
 from app.core.logging import STRUCTURED_LOG_ATTR
+from app.services.knowledge.search import KnowledgeSearchResult
 from app.services.voice import orchestrator as orchestrator_module
 from app.services.voice.orchestrator import VoiceOrchestrator
 from app.services.tenancy import OrganizationContext
@@ -27,11 +30,19 @@ def structured_events(caplog: LogCaptureFixture) -> list[dict]:
     ]
 
 
-def test_voice_turn_logs_lifecycle_without_transcript(caplog: LogCaptureFixture) -> None:
+def test_voice_turn_logs_lifecycle_without_transcript(
+    caplog: LogCaptureFixture,
+    monkeypatch: MonkeyPatch,
+) -> None:
     caller_text = "My private admission question"
     caplog.set_level(logging.INFO, logger=orchestrator_module.__name__)
+    monkeypatch.setattr(
+        orchestrator_module,
+        "search_knowledge",
+        lambda *args, **kwargs: KnowledgeSearchResult.no_verified_answer(),
+    )
 
-    response = VoiceOrchestrator().handle_turn(
+    response = VoiceOrchestrator(Mock(spec=Session)).handle_turn(
         ORGANIZATION,
         caller_text,
         call_id="call-123",
@@ -60,17 +71,23 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
 ) -> None:
     observed_organization_ids: list[UUID] = []
 
-    def scoped_search(organization_id: UUID, query: str) -> dict:
+    def scoped_search(
+        session: Session,
+        organization_id: UUID,
+        query: str,
+        *,
+        branch_id: UUID | None = None,
+    ) -> KnowledgeSearchResult:
         observed_organization_ids.append(organization_id)
-        return {
-            "answer": "Verified tenant answer",
-            "confidence": 0.95,
-            "source_id": "source-123",
-        }
+        return KnowledgeSearchResult(
+            answer="Verified tenant answer",
+            confidence=0.95,
+            source_id=UUID("00000000-0000-0000-0000-000000000456"),
+        )
 
     monkeypatch.setattr(orchestrator_module, "search_knowledge", scoped_search)
 
-    response = VoiceOrchestrator().handle_turn(
+    response = VoiceOrchestrator(Mock(spec=Session)).handle_turn(
         ORGANIZATION,
         "tenant-specific question",
         call_id="call-scoped",
@@ -84,14 +101,20 @@ def test_voice_turn_logs_safe_error_context(
     caplog: LogCaptureFixture,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    def fail_search(organization_id: UUID, query: str) -> dict:
+    def fail_search(
+        session: Session,
+        organization_id: UUID,
+        query: str,
+        *,
+        branch_id: UUID | None = None,
+    ) -> KnowledgeSearchResult:
         raise RuntimeError("provider-token-must-not-appear")
 
     monkeypatch.setattr(orchestrator_module, "search_knowledge", fail_search)
     caplog.set_level(logging.ERROR, logger=orchestrator_module.__name__)
 
     with pytest.raises(RuntimeError, match="provider-token-must-not-appear"):
-        VoiceOrchestrator().handle_turn(
+        VoiceOrchestrator(Mock(spec=Session)).handle_turn(
             ORGANIZATION,
             "private caller input",
             call_id="call-error",

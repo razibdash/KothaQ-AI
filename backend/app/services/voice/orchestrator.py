@@ -1,4 +1,7 @@
 import logging
+from uuid import UUID
+
+from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger, log_event
 from app.services.ai.answer_policy import enforce_verified_answer_policy
@@ -10,12 +13,16 @@ logger = get_logger(__name__)
 
 
 class VoiceOrchestrator:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
     def handle_turn(
         self,
         organization: OrganizationContext,
         caller_text: str,
         *,
         call_id: str | None = None,
+        branch_id: UUID | None = None,
     ) -> str:
         try:
             log_event(
@@ -39,10 +46,15 @@ class VoiceOrchestrator:
                 language=language,
             )
 
-            result = search_knowledge(organization.id, caller_text)
-            confidence = float(result.get("confidence", 0.0))
+            result = search_knowledge(
+                self.session,
+                organization.id,
+                caller_text,
+                branch_id=branch_id,
+            )
+            confidence = result.confidence
             response, requires_handoff = enforce_verified_answer_policy(
-                result.get("answer"),
+                result.answer,
                 confidence,
             )
             log_event(
@@ -53,7 +65,7 @@ class VoiceOrchestrator:
                 call_id=call_id,
                 organization_slug=organization.slug,
                 confidence=confidence,
-                source_id=result.get("source_id"),
+                source_id=result.source_id,
                 requires_handoff=requires_handoff,
             )
 
