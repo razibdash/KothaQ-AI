@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "voice-agent-backend"
 version = "0.1.0"
@@ -21,3 +25,8 @@ dev = ["pytest", "pytest-asyncio", "ruff", "mypy"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["alembic*"]
