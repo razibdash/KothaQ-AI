@@ -65,6 +65,16 @@ curl http://localhost:8000/health
 Expected status is `ok`. Interactive API documentation is available at
 `http://localhost:8000/docs`.
 
+Apply database migrations from the backend directory:
+
+```powershell
+python -m alembic upgrade head
+```
+
+The command uses `DATABASE_URL` from `backend/.env`. The default local value
+creates `backend/local.db`; set a PostgreSQL URL in the ignored `.env` file
+when testing against PostgreSQL.
+
 ## Frontend
 
 In a separate terminal:
@@ -129,4 +139,3 @@ See `docs/repo_audit.md` for known baseline gaps.
   port.
 - **Database connection from a container fails:** Container connections must
   use Compose service names such as `postgres` and `redis`, not `localhost`.
-
