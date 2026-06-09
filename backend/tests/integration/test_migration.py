@@ -23,6 +23,7 @@ REQUIRED_COLUMNS = {
         "default_language",
         "supported_languages",
         "timezone",
+        "handoff_settings",
         "created_at",
         "updated_at",
     },

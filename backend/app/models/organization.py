@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, String
-from sqlalchemy.ext.mutable import MutableList
+from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -27,6 +27,10 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=list,
     )
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Dhaka")
+    handoff_settings: Mapped[dict[str, object]] = mapped_column(
+        MutableDict.as_mutable(JSON),
+        default=dict,
+    )
 
     branches: Mapped[list["Branch"]] = relationship(
         back_populates="organization",

@@ -24,6 +24,7 @@ def create_organization(
     default_language: str = "bn-BD",
     supported_languages: list[str] | None = None,
     timezone: str = "Asia/Dhaka",
+    handoff_settings: dict[str, object] | None = None,
 ) -> Organization:
     organization = Organization(
         slug=slug,
@@ -31,6 +32,7 @@ def create_organization(
         default_language=default_language,
         supported_languages=supported_languages or [default_language],
         timezone=timezone,
+        handoff_settings=handoff_settings or {},
     )
     session.add(organization)
     session.flush()

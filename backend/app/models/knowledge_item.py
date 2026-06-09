@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,6 +16,12 @@ class KnowledgeItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "knowledge_items"
     __table_args__ = (
         Index("ix_knowledge_items_org_status_language", "organization_id", "status", "language"),
+        UniqueConstraint(
+            "organization_id",
+            "source_type",
+            "source_reference",
+            name="uq_knowledge_items_org_source_reference",
+        ),
     )
 
     organization_id: Mapped[UUID] = mapped_column(

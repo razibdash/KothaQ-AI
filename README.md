@@ -82,6 +82,21 @@ The example environment file contains placeholders only. Put real local
 credentials in `backend/.env`, never in tracked files. Full setup and
 troubleshooting are in [docs/local_setup.md](docs/local_setup.md).
 
+## Demo Data
+
+After applying migrations, seed the three demo tenants:
+
+```powershell
+cd backend
+python -m alembic upgrade head
+python -m app.seeds.demo
+```
+
+The seed creates Demo University Sylhet, Demo School Sylhet, and Demo Service
+Company. Each has one Sylhet branch, language settings, mock handoff settings,
+and 20 approved FAQs. The command is idempotent: running it again updates the
+same seeded rows instead of creating duplicates.
+
 ## Development
 
 Run backend tests:

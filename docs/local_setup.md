@@ -75,6 +75,15 @@ The command uses `DATABASE_URL` from `backend/.env`. The default local value
 creates `backend/local.db`; set a PostgreSQL URL in the ignored `.env` file
 when testing against PostgreSQL.
 
+Seed the demo tenants after migrations:
+
+```powershell
+python -m app.seeds.demo
+```
+
+The seed is safe to rerun and uses mock, masked handoff settings. It does not
+contain provider credentials or real payment instructions.
+
 ## Frontend
 
 In a separate terminal:
