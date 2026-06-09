@@ -1,0 +1,18 @@
+{
+  "slug": "demo_university",
+  "name": "Demo University Sylhet",
+  "default_language": "bn-BD",
+  "supported_languages": [
+    "bn-BD",
+    "bn-Latn",
+    "syl-BD",
+    "en-US"
+  ],
+  "branches": [
+    {
+      "slug": "sylhet",
+      "name": "Sylhet Campus"
+    }
+  ],
+  "handoff_number": "+8801000000000"
+}
