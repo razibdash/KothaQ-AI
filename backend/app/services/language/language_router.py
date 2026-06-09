@@ -1,6 +1,11 @@
 import unicodedata
 from collections.abc import Sequence
 
+from app.services.language.sylhet_lexicon import (
+    SYLHET_MARKERS,
+    normalize_sylhet_friendly,
+)
+
 SUPPORTED_LANGUAGE_CODES = frozenset(
     {
         "bn-BD",
@@ -32,19 +37,6 @@ BANGLISH_MARKERS = frozenset(
         "vorti",
     }
 )
-SYLHET_MARKERS = frozenset(
-    {
-        "afne",
-        "ain",
-        "gesoin",
-        "kita",
-        "kun",
-        "lagbo",
-        "oino",
-        "zaitam",
-    }
-)
-
 TOKEN_ALIASES = {
     "admissions": "admission",
     "admissionor": "admission",
@@ -116,6 +108,7 @@ STOP_WORDS = frozenset(
 
 
 def _tokens(text: str) -> list[str]:
+    """Split text into Unicode-aware lowercase search tokens."""
     normalized = unicodedata.normalize("NFKC", text).casefold()
     searchable = "".join(
         character
@@ -127,10 +120,12 @@ def _tokens(text: str) -> list[str]:
 
 
 def _has_bangla_script(text: str) -> bool:
+    """Return whether text contains a character from the Bangla Unicode block."""
     return any("\u0980" <= character <= "\u09ff" for character in text)
 
 
 def detect_language(text: str) -> str:
+    """Detect a supported language mode using deterministic script and term rules."""
     tokens = set(_tokens(text))
     if _has_bangla_script(text):
         return "bn-BD"
@@ -142,6 +137,7 @@ def detect_language(text: str) -> str:
 
 
 def normalize_text(text: str, language_code: str) -> str:
+    """Normalize caller text into stable concepts suitable for knowledge search."""
     if language_code not in SUPPORTED_LANGUAGE_CODES:
         raise ValueError(f"unsupported language code: {language_code}")
 
@@ -150,6 +146,10 @@ def normalize_text(text: str, language_code: str) -> str:
 
     if {"cse", "cost"} <= token_set and ({"koto", "কত"} & token_set):
         return "cse cost কত cse tuition fee"
+
+    sylhet_concepts = normalize_sylhet_friendly(" ".join(tokens))
+    if sylhet_concepts is not None:
+        return sylhet_concepts
 
     admission_terms = {"admission", "admissionor", "bhorti", "vorti", "ভর্তি"}
     requirement_terms = {
@@ -184,6 +184,7 @@ def choose_response_language(
     org_default: str,
     supported_languages: Sequence[str],
 ) -> str:
+    """Choose the closest caller language enabled by the organization."""
     supported = tuple(dict.fromkeys(supported_languages))
     if not supported:
         return org_default

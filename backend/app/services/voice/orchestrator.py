@@ -8,12 +8,19 @@ from app.services.ai.answer_policy import enforce_verified_answer_policy
 from app.services.knowledge.search import search_knowledge
 from app.services.language.language_router import choose_response_language
 from app.services.tenancy import OrganizationContext
+from app.services.voice.response_style import (
+    ResponseStyle,
+    caller_requests_details,
+    style_verified_answer,
+    unknown_answer_fallback,
+)
 
 logger = get_logger(__name__)
 
 
 class VoiceOrchestrator:
     def __init__(self, session: Session) -> None:
+        """Create a voice orchestrator backed by the current database session."""
         self.session = session
 
     def handle_turn(
@@ -23,7 +30,9 @@ class VoiceOrchestrator:
         *,
         call_id: str | None = None,
         branch_id: UUID | None = None,
+        response_style: ResponseStyle = "student_friendly",
     ) -> str:
+        """Handle one tenant-scoped caller turn and return a styled voice reply."""
         try:
             log_event(
                 logger,
@@ -61,6 +70,15 @@ class VoiceOrchestrator:
                 result.answer,
                 confidence,
             )
+            if requires_handoff:
+                response = unknown_answer_fallback(language, response_style)
+            else:
+                response = style_verified_answer(
+                    response,
+                    language,
+                    response_style,
+                    include_details=caller_requests_details(caller_text),
+                )
             log_event(
                 logger,
                 logging.INFO,

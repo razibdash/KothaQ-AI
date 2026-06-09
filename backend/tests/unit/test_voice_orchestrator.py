@@ -23,6 +23,7 @@ ORGANIZATION = OrganizationContext(
 
 
 def structured_events(caplog: LogCaptureFixture) -> list[dict]:
+    """Return structured event payloads captured during an orchestrator test."""
     return [
         getattr(record, STRUCTURED_LOG_ATTR)
         for record in caplog.records
@@ -34,6 +35,7 @@ def test_voice_turn_logs_lifecycle_without_transcript(
     caplog: LogCaptureFixture,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """Log a safe lifecycle and return the localized unknown-answer fallback."""
     caller_text = "My private admission question"
     caplog.set_level(logging.INFO, logger=orchestrator_module.__name__)
     monkeypatch.setattr(
@@ -65,11 +67,16 @@ def test_voice_turn_logs_lifecycle_without_transcript(
     assert caller_text not in caplog.text
     assert events[0]["input_length"] == len(caller_text)
     assert events[1]["language"] == "en-US"
+    assert response == (
+        "I cannot confirm that yet. "
+        "I can connect you with someone who can help."
+    )
 
 
 def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """Pass the resolved tenant ID into search and style the verified answer."""
     observed_organization_ids: list[UUID] = []
 
     def scoped_search(
@@ -79,6 +86,7 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
         *,
         branch_id: UUID | None = None,
     ) -> KnowledgeSearchResult:
+        """Return a verified result while recording the tenant search scope."""
         observed_organization_ids.append(organization_id)
         return KnowledgeSearchResult(
             answer="Verified tenant answer",
@@ -94,7 +102,7 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
         call_id="call-scoped",
     )
 
-    assert response == "Verified tenant answer"
+    assert response == "Sure. Verified tenant answer"
     assert observed_organization_ids == [ORGANIZATION.id]
 
 
@@ -102,6 +110,7 @@ def test_voice_turn_logs_safe_error_context(
     caplog: LogCaptureFixture,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    """Log safe context without exposing exception text or caller input."""
     def fail_search(
         session: Session,
         organization_id: UUID,
@@ -109,6 +118,7 @@ def test_voice_turn_logs_safe_error_context(
         *,
         branch_id: UUID | None = None,
     ) -> KnowledgeSearchResult:
+        """Raise a controlled error for safe logging assertions."""
         raise RuntimeError("provider-token-must-not-appear")
 
     monkeypatch.setattr(orchestrator_module, "search_knowledge", fail_search)

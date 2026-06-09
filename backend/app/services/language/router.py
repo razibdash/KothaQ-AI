@@ -13,4 +13,5 @@ __all__ = [
 
 
 def detect_language_mode(text: str) -> str:
+    """Preserve the previous detector name while using the shared language router."""
     return detect_language(text)
