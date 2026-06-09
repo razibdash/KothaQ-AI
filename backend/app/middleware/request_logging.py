@@ -20,6 +20,9 @@ async def log_backend_request(
     try:
         response = await call_next(request)
     except Exception as exc:
+        organization_context = getattr(request.state, "organization_context", None)
+        if organization_context is not None:
+            tenant_id = organization_context.tenant_id
         log_event(
             logger,
             logging.ERROR,
@@ -33,6 +36,9 @@ async def log_backend_request(
         )
         raise
 
+    organization_context = getattr(request.state, "organization_context", None)
+    if organization_context is not None:
+        tenant_id = organization_context.tenant_id
     log_event(
         logger,
         logging.INFO,

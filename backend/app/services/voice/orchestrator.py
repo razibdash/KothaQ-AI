@@ -4,6 +4,7 @@ from app.core.logging import get_logger, log_event
 from app.services.ai.answer_policy import enforce_verified_answer_policy
 from app.services.knowledge.search import search_knowledge
 from app.services.language.router import detect_language_mode
+from app.services.tenancy import OrganizationContext
 
 logger = get_logger(__name__)
 
@@ -11,7 +12,7 @@ logger = get_logger(__name__)
 class VoiceOrchestrator:
     def handle_turn(
         self,
-        organization_slug: str,
+        organization: OrganizationContext,
         caller_text: str,
         *,
         call_id: str | None = None,
@@ -21,8 +22,9 @@ class VoiceOrchestrator:
                 logger,
                 logging.INFO,
                 "user_input_received",
-                tenant_id=organization_slug,
+                tenant_id=organization.tenant_id,
                 call_id=call_id,
+                organization_slug=organization.slug,
                 input_length=len(caller_text),
             )
 
@@ -31,12 +33,13 @@ class VoiceOrchestrator:
                 logger,
                 logging.INFO,
                 "language_detected",
-                tenant_id=organization_slug,
+                tenant_id=organization.tenant_id,
                 call_id=call_id,
+                organization_slug=organization.slug,
                 language=language,
             )
 
-            result = search_knowledge(organization_slug, caller_text)
+            result = search_knowledge(organization.id, caller_text)
             confidence = float(result.get("confidence", 0.0))
             response, requires_handoff = enforce_verified_answer_policy(
                 result.get("answer"),
@@ -46,8 +49,9 @@ class VoiceOrchestrator:
                 logger,
                 logging.INFO,
                 "answer_selected",
-                tenant_id=organization_slug,
+                tenant_id=organization.tenant_id,
                 call_id=call_id,
+                organization_slug=organization.slug,
                 confidence=confidence,
                 source_id=result.get("source_id"),
                 requires_handoff=requires_handoff,
@@ -58,8 +62,9 @@ class VoiceOrchestrator:
                     logger,
                     logging.WARNING,
                     "unknown_question",
-                    tenant_id=organization_slug,
+                    tenant_id=organization.tenant_id,
                     call_id=call_id,
+                    organization_slug=organization.slug,
                     language=language,
                     input_length=len(caller_text),
                 )
@@ -67,8 +72,9 @@ class VoiceOrchestrator:
                     logger,
                     logging.INFO,
                     "handoff_requested",
-                    tenant_id=organization_slug,
+                    tenant_id=organization.tenant_id,
                     call_id=call_id,
+                    organization_slug=organization.slug,
                     reason="low_confidence",
                 )
 
@@ -78,8 +84,9 @@ class VoiceOrchestrator:
                 logger,
                 logging.ERROR,
                 "voice_turn_error",
-                tenant_id=organization_slug,
+                tenant_id=organization.tenant_id,
                 call_id=call_id,
+                organization_slug=organization.slug,
                 error_type=type(exc).__name__,
                 operation="handle_turn",
             )
