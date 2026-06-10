@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -222,6 +222,19 @@ class TenantStorageService:
         self.session.add(lead)
         self.session.flush()
         return lead
+
+    def complete_conversation(self, conversation_id: UUID) -> None:
+        """Mark a conversation as completed and record its end time."""
+        conv = self.session.scalar(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.organization_id == self.organization_id,
+            )
+        )
+        if conv is not None:
+            conv.status = "completed"
+            conv.ended_at = datetime.now(timezone.utc)
+            self.session.flush()
 
     def create_handoff(
         self,

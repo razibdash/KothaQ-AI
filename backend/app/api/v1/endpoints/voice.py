@@ -166,6 +166,26 @@ async def gather_response(
             session.commit()
             return _voice_response(_voice.handoff(language_code, phone))
 
+        # Caller signals end of call — say goodbye and hang up
+        if _voice.caller_wants_to_exit(speech_result):
+            log_event(
+                logger,
+                logging.INFO,
+                "caller_exit",
+                tenant_id=organization.tenant_id,
+                call_id=call_id,
+                organization_slug=organization.slug,
+            )
+            storage.create_call_turn(
+                conversation_id=conv.id,
+                role="user",
+                input_text=speech_result,
+                output_text="[call ended by caller]",
+            )
+            storage.complete_conversation(conv.id)
+            session.commit()
+            return _voice_response(_voice.goodbye(language_code))
+
         # Process through the voice pipeline
         result = VoiceOrchestrator(session).handle_turn(
             organization,

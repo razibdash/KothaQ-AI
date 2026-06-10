@@ -54,3 +54,11 @@ class VoiceProvider(Protocol):
     def caller_requests_handoff(self, speech_text: str) -> bool:
         """Return True when the caller's words explicitly request a human agent."""
         ...
+
+    def goodbye(self, language_code: str) -> str:
+        """Speak a polite farewell and terminate the call — no Gather follows."""
+        ...
+
+    def caller_wants_to_exit(self, speech_text: str) -> bool:
+        """Return True when the caller signals they want to end the call."""
+        ...

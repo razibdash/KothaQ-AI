@@ -203,3 +203,102 @@ def test_caller_requests_handoff_true(text: str) -> None:
 )
 def test_caller_requests_handoff_false(text: str) -> None:
     assert adapter.caller_requests_handoff(text) is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can I speak to the admission officer?",
+        "I need to talk to the admissions officer",
+        "অফিসে কথা বলবো",
+        "আমি অফিসে কথা বলবো",
+        "office kotha bolbo",
+        "office e kotha bolbo",
+    ],
+)
+def test_caller_requests_handoff_phrase_true(text: str) -> None:
+    assert adapter.caller_requests_handoff(text) is True
+
+
+# ---------------------------------------------------------------------------
+# caller_wants_to_exit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "thank you",
+        "Thank you very much",
+        "no thanks",
+        "No thank you",
+        "goodbye",
+        "bye",
+        "Goodbye and thank you",
+        "ar lagbe na",
+        "Ar lagbe na bhai",
+        "na lagbe na",
+        "আর লাগবে না",
+        "না লাগবে",
+        "ধন্যবাদ",
+        "ok ধন্যবাদ",
+        "that's all",
+        "thats all",
+        "biday",
+    ],
+)
+def test_caller_wants_to_exit_true(text: str) -> None:
+    assert adapter.caller_wants_to_exit(text) is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "When is the admission deadline?",
+        "What is the fee structure?",
+        "আমার প্রশ্ন আছে",
+        "tell me more",
+    ],
+)
+def test_caller_wants_to_exit_false(text: str) -> None:
+    assert adapter.caller_wants_to_exit(text) is False
+
+
+# ---------------------------------------------------------------------------
+# goodbye TwiML
+# ---------------------------------------------------------------------------
+
+
+def test_goodbye_contains_say_and_hangup() -> None:
+    root = _parse(adapter.goodbye("en-US"))
+    assert root.find("Say") is not None
+    assert root.find("Hangup") is not None
+
+
+def test_goodbye_no_gather() -> None:
+    root = _parse(adapter.goodbye("en-US"))
+    assert root.find("Gather") is None
+
+
+def test_goodbye_no_dial() -> None:
+    root = _parse(adapter.goodbye("en-US"))
+    assert root.find("Dial") is None
+
+
+def test_goodbye_english_say_text() -> None:
+    root = _parse(adapter.goodbye("en-US"))
+    say = root.find("Say")
+    assert say is not None
+    assert say.text  # farewell message present
+
+
+def test_goodbye_bengali_language() -> None:
+    root = _parse(adapter.goodbye("bn-BD"))
+    say = root.find("Say")
+    assert say is not None
+    assert say.attrib.get("language") == "bn-IN"
+    assert say.text  # localised farewell present
+
+
+def test_goodbye_returns_xml_declaration() -> None:
+    assert adapter.goodbye("en-US").startswith("<?xml")

@@ -17,7 +17,7 @@ _TWILIO_LANGUAGE_MAP: dict[str, str] = {
 
 _GATHER_TIMEOUT = "5"
 
-# Keywords that signal an explicit human-handoff request from the caller.
+# Single-word triggers for a human-handoff request.
 _HANDOFF_KEYWORDS = frozenset(
     {
         "human",
@@ -31,6 +31,48 @@ _HANDOFF_KEYWORDS = frozenset(
         "manush",
         "porichalok",
     }
+)
+
+# Multi-word phrases that also trigger a handoff (checked as substrings).
+_HANDOFF_PHRASES: tuple[str, ...] = (
+    "admission officer",
+    "admissions officer",
+    "talk to someone",
+    "speak to someone",
+    "speak to a person",
+    "অফিসে কথা বলবো",
+    "অফিসে কথা বলব",
+    "অফিসে কথা",
+    "অফিসে বলবো",
+    "office e kotha",
+    "office kotha",
+)
+
+# Single-word exit signals.
+_EXIT_KEYWORDS = frozenset(
+    {
+        "bye",
+        "goodbye",
+        "biday",   # Bengali transliteration
+        "bidai",
+    }
+)
+
+# Substring phrases that signal the caller wants to end the call.
+_EXIT_PHRASES: tuple[str, ...] = (
+    "thank you",
+    "no thanks",
+    "no thank you",
+    "that's all",
+    "thats all",
+    "ar lagbe na",    # Banglish: আর লাগবে না
+    "na lagbe na",    # Banglish variant
+    "ar na",          # short Banglish variant
+    "আর লাগবে না",
+    "না লাগবে",
+    "আর না",
+    "ধন্যবাদ",        # Bengali: thank you
+    "শেষ",            # Bengali: finished / done
 )
 
 # ---------------------------------------------------------------------------
@@ -136,8 +178,18 @@ def _gather(
 
 def caller_requests_handoff(speech_text: str) -> bool:
     """Return True when the caller's words explicitly ask for a human agent."""
-    words = speech_text.casefold().split()
-    return bool(set(words) & _HANDOFF_KEYWORDS)
+    text = speech_text.casefold()
+    if set(text.split()) & _HANDOFF_KEYWORDS:
+        return True
+    return any(phrase in text for phrase in _HANDOFF_PHRASES)
+
+
+def caller_wants_to_exit(speech_text: str) -> bool:
+    """Return True when the caller signals they want to end the call."""
+    text = speech_text.casefold()
+    if set(text.split()) & _EXIT_KEYWORDS:
+        return True
+    return any(phrase in text for phrase in _EXIT_PHRASES)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +257,15 @@ def handoff_twiml(language_code: str, handoff_phone: str | None) -> str:
     return _to_twiml(root)
 
 
+def goodbye_twiml(language_code: str) -> str:
+    """Speak a polite farewell and hang up — no further input is expected."""
+    lg = _lang_group(language_code)
+    root = ET.Element("Response")
+    _say(root, _GOODBYE[lg], language_code)
+    ET.SubElement(root, "Hangup")
+    return _to_twiml(root)
+
+
 def build_say_response(message: str) -> str:
     """Minimal TwiML that speaks a single message (kept for backward compatibility)."""
     root = ET.Element("Response")
@@ -256,3 +317,9 @@ class TwilioVoiceAdapter:
 
     def caller_requests_handoff(self, speech_text: str) -> bool:
         return caller_requests_handoff(speech_text)
+
+    def goodbye(self, language_code: str) -> str:
+        return goodbye_twiml(language_code)
+
+    def caller_wants_to_exit(self, speech_text: str) -> bool:
+        return caller_wants_to_exit(speech_text)

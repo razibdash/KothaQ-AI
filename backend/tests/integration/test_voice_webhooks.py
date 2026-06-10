@@ -361,3 +361,257 @@ def test_invalid_org_slug_returns_404(db_client: TestClient) -> None:
             data={"CallSid": _CALL_SID, "From": _CALLER},
         )
         assert response.status_code == 404, f"Expected 404 for /voice/{endpoint}/no-such-org"
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn conversation
+# ---------------------------------------------------------------------------
+
+
+def test_multi_turn_reuses_same_conversation(
+    db_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three gather calls with the same CallSid map to a single Conversation."""
+    from app.models.call_turn import CallTurn
+    from app.models.conversation import Conversation
+    from sqlalchemy import select
+
+    org = _setup_org(db_session)
+    source_item = _make_approved_item(org.id, "Fees are 5000 BDT per semester.")
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "search_knowledge",
+        lambda *a, **kw: KnowledgeSearchResult(
+            answer="Fees are 5000 BDT per semester.",
+            confidence=0.90,
+            source_id=source_item.id,
+            source_item=source_item,
+        ),
+    )
+
+    db_client.post(
+        f"/api/v1/voice/incoming/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER},
+    )
+    db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": "What are the fees?"},
+    )
+    db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": "When is the next intake?"},
+    )
+
+    convs = db_session.scalars(
+        select(Conversation).where(
+            Conversation.organization_id == org.id,
+            Conversation.provider == "twilio",
+            Conversation.provider_call_id == _CALL_SID,
+        )
+    ).all()
+    assert len(convs) == 1, "All turns should share a single Conversation"
+
+    turns = db_session.scalars(
+        select(CallTurn).where(CallTurn.conversation_id == convs[0].id)
+    ).all()
+    # greeting turn (assistant) + 2 user turns
+    assert len(turns) == 3
+
+
+def test_multi_turn_each_gather_returns_answer_with_follow_up(
+    db_client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each gather call in a multi-turn session returns an answer and a follow-up Gather."""
+    org = _setup_org(db_session)
+    source_item = _make_approved_item(org.id, "Admission opens in January.")
+
+    monkeypatch.setattr(
+        orchestrator_module,
+        "search_knowledge",
+        lambda *a, **kw: KnowledgeSearchResult(
+            answer="Admission opens in January.",
+            confidence=0.90,
+            source_id=source_item.id,
+            source_item=source_item,
+        ),
+    )
+
+    for question in ("When is admission?", "What are the requirements?"):
+        resp = db_client.post(
+            f"/api/v1/voice/gather/{_ORG_SLUG}",
+            data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": question},
+        )
+        assert resp.status_code == 200
+        root = _parse(resp.text)
+        assert root.find("Say") is not None
+        assert root.find("Gather") is not None, f"No Gather on turn for '{question}'"
+        assert root.find("Dial") is None
+
+
+# ---------------------------------------------------------------------------
+# Exit phrase detection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "speech",
+    [
+        "thank you",
+        "no thanks",
+        "goodbye",
+        "bye",
+        "ar lagbe na",
+        "that's all",
+    ],
+)
+def test_gather_exit_phrase_returns_goodbye_twiml(
+    speech: str,
+    db_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Exit phrases return a <Say>+<Hangup> response with no follow-up Gather."""
+    _setup_org(db_session)
+
+    resp = db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": speech},
+    )
+
+    assert resp.status_code == 200
+    root = _parse(resp.text)
+    assert root.find("Gather") is None, f"Gather should not appear after exit phrase '{speech}'"
+    assert root.find("Hangup") is not None, f"Hangup missing after exit phrase '{speech}'"
+    assert root.find("Say") is not None
+
+
+def test_gather_exit_phrase_marks_conversation_completed(
+    db_client: TestClient,
+    db_session: Session,
+) -> None:
+    """After an exit phrase the Conversation status is set to 'completed'."""
+    from app.models.conversation import Conversation
+    from sqlalchemy import select
+
+    org = _setup_org(db_session)
+
+    # Create conversation via incoming call first
+    db_client.post(
+        f"/api/v1/voice/incoming/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER},
+    )
+
+    db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": "thank you"},
+    )
+
+    conv = db_session.scalar(
+        select(Conversation).where(
+            Conversation.organization_id == org.id,
+            Conversation.provider_call_id == _CALL_SID,
+        )
+    )
+    assert conv is not None
+    assert conv.status == "completed"
+    assert conv.ended_at is not None
+
+
+def test_gather_exit_logs_call_turn(
+    db_client: TestClient,
+    db_session: Session,
+) -> None:
+    """Exit phrase creates a user call turn recording the farewell utterance."""
+    from app.models.call_turn import CallTurn
+    from app.models.conversation import Conversation
+    from sqlalchemy import select
+
+    org = _setup_org(db_session)
+
+    db_client.post(
+        f"/api/v1/voice/incoming/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER},
+    )
+    db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": "goodbye"},
+    )
+
+    conv = db_session.scalar(
+        select(Conversation).where(Conversation.organization_id == org.id)
+    )
+    assert conv is not None
+
+    turns = db_session.scalars(
+        select(CallTurn).where(
+            CallTurn.conversation_id == conv.id,
+            CallTurn.role == "user",
+        )
+    ).all()
+    assert len(turns) == 1
+    assert turns[0].input_text == "goodbye"
+
+
+# ---------------------------------------------------------------------------
+# New handoff phrases (admission officer / অফিসে কথা বলবো)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "speech",
+    [
+        "Can I speak to the admission officer?",
+        "admission officer please",
+        "অফিসে কথা বলবো",
+        "office kotha bolbo",
+    ],
+)
+def test_gather_new_handoff_phrases_trigger_handoff(
+    speech: str,
+    db_client: TestClient,
+    db_session: Session,
+) -> None:
+    """New handoff phrases bypass the knowledge pipeline and return a handoff response."""
+    _setup_org(db_session, handoff_phone="+15551110000")
+
+    resp = db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={"CallSid": _CALL_SID, "From": _CALLER, "SpeechResult": speech},
+    )
+
+    assert resp.status_code == 200
+    root = _parse(resp.text)
+    dial = root.find("Dial")
+    assert dial is not None, f"Expected <Dial> for handoff phrase '{speech}'"
+    assert dial.text == "+15551110000"
+
+
+# ---------------------------------------------------------------------------
+# Handoff takes priority over exit when both signals are present
+# ---------------------------------------------------------------------------
+
+
+def test_handoff_wins_over_exit_when_both_present(
+    db_client: TestClient,
+    db_session: Session,
+) -> None:
+    """'No thanks, transfer me' should trigger handoff, not exit."""
+    _setup_org(db_session, handoff_phone="+15551112222")
+
+    resp = db_client.post(
+        f"/api/v1/voice/gather/{_ORG_SLUG}",
+        data={
+            "CallSid": _CALL_SID,
+            "From": _CALLER,
+            "SpeechResult": "no thanks just transfer me to an agent",
+        },
+    )
+
+    assert resp.status_code == 200
+    root = _parse(resp.text)
+    assert root.find("Dial") is not None
+    assert root.find("Hangup") is None
