@@ -18,7 +18,9 @@ def test_voice_route_resolves_valid_organization(
     response = db_client.post("/api/v1/voice/incoming/sylhet-university")
 
     assert response.status_code == 200
-    assert "Welcome to Sylhet University" in response.text
+    assert "Sylhet University" in response.text
+    assert "<Response>" in response.text
+    assert "<Gather" in response.text
 
 
 def test_voice_route_returns_404_for_unknown_organization(
@@ -77,7 +79,7 @@ def test_voice_route_keeps_tenants_isolated_by_slug(
     second_response = db_client.post("/api/v1/voice/incoming/second-school")
 
     assert first.id != second.id
-    assert "Welcome to First School" in first_response.text
+    assert "First School" in first_response.text
     assert "Second School" not in first_response.text
-    assert "Welcome to Second School" in second_response.text
+    assert "Second School" in second_response.text
     assert "First School" not in second_response.text

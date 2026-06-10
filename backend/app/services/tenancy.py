@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +16,7 @@ class OrganizationContext:
     default_language: str
     supported_languages: tuple[str, ...]
     timezone: str
+    handoff_settings: dict[str, object] = field(default_factory=dict)
 
     @property
     def tenant_id(self) -> str:
@@ -30,6 +31,7 @@ class OrganizationContext:
             default_language=organization.default_language,
             supported_languages=tuple(organization.supported_languages),
             timezone=organization.timezone,
+            handoff_settings=dict(organization.handoff_settings),
         )
 
 

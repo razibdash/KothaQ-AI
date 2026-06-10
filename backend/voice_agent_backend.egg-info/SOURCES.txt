@@ -12,6 +12,7 @@ app/api/v1/endpoints/health.py
 app/api/v1/endpoints/knowledge.py
 app/api/v1/endpoints/leads.py
 app/api/v1/endpoints/organizations.py
+app/api/v1/endpoints/unknown_questions.py
 app/api/v1/endpoints/voice.py
 app/core/__init__.py
 app/core/config.py

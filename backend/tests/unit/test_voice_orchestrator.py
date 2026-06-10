@@ -54,7 +54,7 @@ def test_voice_turn_logs_lifecycle_without_transcript(
     events = structured_events(caplog)
     event_names = [event["event"] for event in events]
 
-    assert response
+    assert response.response_text
     assert event_names == [
         "user_input_received",
         "language_detected",
@@ -68,10 +68,12 @@ def test_voice_turn_logs_lifecycle_without_transcript(
     assert caller_text not in caplog.text
     assert events[0]["input_length"] == len(caller_text)
     assert events[1]["language"] == "en-US"
-    assert response == (
+    assert response.response_text == (
         "I cannot confirm that yet. "
         "I can connect you with someone who can help."
     )
+    assert response.should_handoff is True
+    assert response.detected_language == "en-US"
 
 
 def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
@@ -110,7 +112,8 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
         call_id="call-scoped",
     )
 
-    assert response == "Sure. Verified tenant answer"
+    assert response.response_text == "Sure. Verified tenant answer"
+    assert response.should_handoff is False
     assert observed_organization_ids == [ORGANIZATION.id]
 
 

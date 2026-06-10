@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -19,9 +20,17 @@ from app.services.voice.response_style import (
 logger = get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class VoiceTurnResult:
+    """Return value of VoiceOrchestrator.handle_turn."""
+
+    response_text: str
+    should_handoff: bool
+    detected_language: str
+
+
 class VoiceOrchestrator:
     def __init__(self, session: Session) -> None:
-        """Create a voice orchestrator backed by the current database session."""
         self.session = session
 
     def handle_turn(
@@ -33,8 +42,8 @@ class VoiceOrchestrator:
         branch_id: UUID | None = None,
         conversation_id: UUID | None = None,
         response_style: ResponseStyle = "student_friendly",
-    ) -> str:
-        """Handle one tenant-scoped caller turn and return a styled voice reply."""
+    ) -> VoiceTurnResult:
+        """Handle one tenant-scoped caller turn and return a structured voice reply."""
         try:
             log_event(
                 logger,
@@ -131,7 +140,11 @@ class VoiceOrchestrator:
                     reason=policy.reason,
                 )
 
-            return response
+            return VoiceTurnResult(
+                response_text=response,
+                should_handoff=policy.should_handoff,
+                detected_language=language,
+            )
         except Exception as exc:
             log_event(
                 logger,
