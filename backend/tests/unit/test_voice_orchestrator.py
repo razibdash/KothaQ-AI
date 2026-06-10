@@ -7,6 +7,7 @@ from pytest import LogCaptureFixture, MonkeyPatch
 from sqlalchemy.orm import Session
 
 from app.core.logging import STRUCTURED_LOG_ATTR
+from app.models.knowledge_item import KnowledgeItem
 from app.services.knowledge.search import KnowledgeSearchResult
 from app.services.voice import orchestrator as orchestrator_module
 from app.services.voice.orchestrator import VoiceOrchestrator
@@ -77,6 +78,12 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """Pass the resolved tenant ID into search and style the verified answer."""
+    source_item = Mock(spec=KnowledgeItem)
+    source_item.id = UUID("00000000-0000-0000-0000-000000000456")
+    source_item.organization_id = ORGANIZATION.id
+    source_item.status = "approved"
+    source_item.answer = "Verified tenant answer"
+
     observed_organization_ids: list[UUID] = []
 
     def scoped_search(
@@ -92,6 +99,7 @@ def test_voice_turn_scopes_knowledge_search_to_resolved_organization(
             answer="Verified tenant answer",
             confidence=0.95,
             source_id=UUID("00000000-0000-0000-0000-000000000456"),
+            source_item=source_item,
         )
 
     monkeypatch.setattr(orchestrator_module, "search_knowledge", scoped_search)

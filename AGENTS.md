@@ -1,4 +1,4 @@
-# Codex / AI Agent Instructions
+# AI Agent Instructions
 
 You are building a multilingual SaaS voice agent platform.
 
@@ -30,4 +30,7 @@ You are building a multilingual SaaS voice agent platform.
 - Never expose secrets.
 - Never store raw credentials in git.
 - Add migration and tests when changing persistence.
+
+```
+
 ```

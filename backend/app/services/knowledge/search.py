@@ -17,10 +17,11 @@ class KnowledgeSearchResult:
     answer: str | None
     confidence: float
     source_id: UUID | None
+    source_item: "KnowledgeItem | None" = None
 
     @classmethod
     def no_verified_answer(cls, confidence: float = 0.0) -> "KnowledgeSearchResult":
-        return cls(answer=None, confidence=confidence, source_id=None)
+        return cls(answer=None, confidence=confidence, source_id=None, source_item=None)
 
 
 def normalize_search_text(text: str) -> str:
@@ -121,4 +122,5 @@ def search_knowledge(
         answer=best_item.answer,
         confidence=rounded_score,
         source_id=best_item.id,
+        source_item=best_item,
     )

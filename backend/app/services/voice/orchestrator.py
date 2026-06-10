@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger, log_event
-from app.services.ai.answer_policy import enforce_verified_answer_policy
-from app.services.knowledge.search import search_knowledge
+from app.services.ai.answer_policy import AnswerPolicyCandidate, evaluate_answer_policy
+from app.services.knowledge.search import normalize_search_text, search_knowledge
 from app.services.language.language_router import choose_response_language
 from app.services.tenancy import OrganizationContext
 from app.services.voice.response_style import (
@@ -65,20 +65,29 @@ class VoiceOrchestrator:
                 caller_text,
                 branch_id=branch_id,
             )
-            confidence = result.confidence
-            response, requires_handoff = enforce_verified_answer_policy(
-                result.answer,
-                confidence,
+            normalized_text = normalize_search_text(caller_text)
+            candidate = AnswerPolicyCandidate(
+                item=result.source_item,
+                confidence=result.confidence,
             )
-            if requires_handoff:
-                response = unknown_answer_fallback(language, response_style)
-            else:
+            policy = evaluate_answer_policy(
+                caller_text,
+                normalized_text,
+                organization.id,
+                candidate,
+                branch_id=branch_id,
+            )
+
+            if policy.answer_allowed:
                 response = style_verified_answer(
-                    response,
+                    policy.response_text,
                     language,
                     response_style,
                     include_details=caller_requests_details(caller_text),
                 )
+            else:
+                response = unknown_answer_fallback(language, response_style)
+
             log_event(
                 logger,
                 logging.INFO,
@@ -86,12 +95,12 @@ class VoiceOrchestrator:
                 tenant_id=organization.tenant_id,
                 call_id=call_id,
                 organization_slug=organization.slug,
-                confidence=confidence,
-                source_id=result.source_id,
-                requires_handoff=requires_handoff,
+                confidence=policy.confidence,
+                source_id=policy.source_knowledge_item_id,
+                requires_handoff=policy.should_handoff,
             )
 
-            if requires_handoff:
+            if policy.should_log_unknown:
                 log_event(
                     logger,
                     logging.WARNING,
@@ -102,6 +111,8 @@ class VoiceOrchestrator:
                     language=language,
                     input_length=len(caller_text),
                 )
+
+            if policy.should_handoff:
                 log_event(
                     logger,
                     logging.INFO,
@@ -109,7 +120,7 @@ class VoiceOrchestrator:
                     tenant_id=organization.tenant_id,
                     call_id=call_id,
                     organization_slug=organization.slug,
-                    reason="low_confidence",
+                    reason=policy.reason,
                 )
 
             return response
