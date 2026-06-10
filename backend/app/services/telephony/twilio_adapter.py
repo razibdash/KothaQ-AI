@@ -211,3 +211,48 @@ def build_say_response(message: str) -> str:
     say = ET.SubElement(root, "Say")
     say.text = message
     return _to_twiml(root)
+
+
+# ---------------------------------------------------------------------------
+# Adapter class — implements VoiceProvider protocol
+# ---------------------------------------------------------------------------
+
+
+class TwilioVoiceAdapter:
+    """VoiceProvider implementation that produces Twilio-compatible TwiML XML."""
+
+    content_type: str = "application/xml"
+
+    def greeting(
+        self,
+        org_name: str,
+        org_slug: str,
+        language_code: str,
+        gather_action_url: str,
+    ) -> str:
+        return greeting_twiml(org_name, org_slug, language_code, gather_action_url)
+
+    def answer(
+        self,
+        response_text: str,
+        language_code: str,
+        gather_action_url: str,
+    ) -> str:
+        return answer_twiml(response_text, language_code, gather_action_url)
+
+    def retry(
+        self,
+        language_code: str,
+        gather_action_url: str,
+    ) -> str:
+        return retry_twiml(language_code, gather_action_url)
+
+    def handoff(
+        self,
+        language_code: str,
+        handoff_phone: str | None,
+    ) -> str:
+        return handoff_twiml(language_code, handoff_phone)
+
+    def caller_requests_handoff(self, speech_text: str) -> bool:
+        return caller_requests_handoff(speech_text)

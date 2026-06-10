@@ -10,18 +10,14 @@ from app.core.config import settings
 from app.core.logging import get_logger, log_event, mask_phone_number
 from app.models.conversation import Conversation
 from app.services.storage import TenantStorageService
-from app.services.telephony.twilio_adapter import (
-    answer_twiml,
-    caller_requests_handoff,
-    greeting_twiml,
-    handoff_twiml,
-    retry_twiml,
-)
+from app.services.telephony import get_voice_provider
 from app.services.tenancy import OrganizationContext
 from app.services.voice.orchestrator import VoiceOrchestrator
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_voice = get_voice_provider()
 
 
 def _gather_url(org_slug: str) -> str:
@@ -48,8 +44,8 @@ def _find_conversation(
     )
 
 
-def _xml(twiml: str) -> Response:
-    return Response(content=twiml, media_type="application/xml")
+def _voice_response(payload: str) -> Response:
+    return Response(content=payload, media_type=_voice.content_type)
 
 
 @router.post("/incoming/{org_slug}")
@@ -89,8 +85,8 @@ async def incoming_call(
         )
         session.commit()
 
-        return _xml(
-            greeting_twiml(
+        return _voice_response(
+            _voice.greeting(
                 org_name=organization.name,
                 org_slug=org_slug,
                 language_code=organization.default_language,
@@ -149,10 +145,10 @@ async def gather_response(
                 call_id=call_id,
                 organization_slug=organization.slug,
             )
-            return _xml(retry_twiml(language_code, gather_url))
+            return _voice_response(_voice.retry(language_code, gather_url))
 
         # Explicit human-handoff request from caller
-        if caller_requests_handoff(speech_result):
+        if _voice.caller_requests_handoff(speech_result):
             log_event(
                 logger,
                 logging.INFO,
@@ -168,7 +164,7 @@ async def gather_response(
                 target_number_masked=phone,
             )
             session.commit()
-            return _xml(handoff_twiml(language_code, phone))
+            return _voice_response(_voice.handoff(language_code, phone))
 
         # Process through the voice pipeline
         result = VoiceOrchestrator(session).handle_turn(
@@ -193,10 +189,10 @@ async def gather_response(
                 target_number_masked=phone,
             )
             session.commit()
-            return _xml(handoff_twiml(result.detected_language, phone))
+            return _voice_response(_voice.handoff(result.detected_language, phone))
 
         session.commit()
-        return _xml(answer_twiml(result.response_text, result.detected_language, gather_url))
+        return _voice_response(_voice.answer(result.response_text, result.detected_language, gather_url))
 
     except Exception as exc:
         log_event(
@@ -244,7 +240,7 @@ async def handoff_call(
             )
             session.commit()
 
-        return _xml(handoff_twiml(organization.default_language, phone))
+        return _voice_response(_voice.handoff(organization.default_language, phone))
 
     except Exception as exc:
         log_event(
