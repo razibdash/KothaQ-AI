@@ -243,6 +243,63 @@ class TenantStorageService:
         self.session.flush()
         return handoff
 
+    def mark_unknown_question_ignored(self, uq_id: UUID) -> UnknownQuestion:
+        uq = self._get_owned_unknown_question(uq_id)
+        if uq is None:
+            raise ValueError("unknown question not found")
+        uq.status = "ignored"
+        self.session.flush()
+        return uq
+
+    def approve_unknown_question(
+        self,
+        uq_id: UUID,
+        *,
+        approved_answer: str,
+        question_override: str | None = None,
+        language: str | None = None,
+        tags: list[str] | None = None,
+    ) -> tuple[UnknownQuestion, KnowledgeItem]:
+        uq = self._get_owned_unknown_question(uq_id)
+        if uq is None:
+            raise ValueError("unknown question not found")
+        if uq.status == "approved":
+            raise ValueError("unknown question is already approved")
+        kb_item = self.create_knowledge_item(
+            question=question_override or uq.question_text,
+            answer=approved_answer,
+            language=language or uq.detected_language or "bn-BD",
+            tags=tags or [],
+            status="approved",
+            source_type="unknown_question_approval",
+            source_reference=str(uq_id),
+        )
+        uq.status = "approved"
+        uq.suggested_answer = approved_answer
+        self.session.flush()
+        return uq, kb_item
+
+    def list_unknown_questions(
+        self,
+        *,
+        status: str | None = None,
+    ) -> list[UnknownQuestion]:
+        statement = select(UnknownQuestion).where(
+            UnknownQuestion.organization_id == self.organization_id
+        )
+        if status is not None:
+            statement = statement.where(UnknownQuestion.status == status)
+        statement = statement.order_by(UnknownQuestion.created_at.desc())
+        return list(self.session.scalars(statement))
+
+    def _get_owned_unknown_question(self, uq_id: UUID) -> UnknownQuestion | None:
+        return self.session.scalar(
+            select(UnknownQuestion).where(
+                UnknownQuestion.id == uq_id,
+                UnknownQuestion.organization_id == self.organization_id,
+            )
+        )
+
     def list_knowledge_items(self) -> list[KnowledgeItem]:
         statement = select(KnowledgeItem).where(
             KnowledgeItem.organization_id == self.organization_id

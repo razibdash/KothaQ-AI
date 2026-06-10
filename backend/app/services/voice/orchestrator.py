@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger, log_event
 from app.services.ai.answer_policy import AnswerPolicyCandidate, evaluate_answer_policy
 from app.services.knowledge.search import normalize_search_text, search_knowledge
-from app.services.language.language_router import choose_response_language
+from app.services.language.language_router import choose_response_language, detect_language
+from app.services.storage import TenantStorageService
 from app.services.tenancy import OrganizationContext
 from app.services.voice.response_style import (
     ResponseStyle,
@@ -30,6 +31,7 @@ class VoiceOrchestrator:
         *,
         call_id: str | None = None,
         branch_id: UUID | None = None,
+        conversation_id: UUID | None = None,
         response_style: ResponseStyle = "student_friendly",
     ) -> str:
         """Handle one tenant-scoped caller turn and return a styled voice reply."""
@@ -101,6 +103,12 @@ class VoiceOrchestrator:
             )
 
             if policy.should_log_unknown:
+                TenantStorageService(self.session, organization.id).create_unknown_question(
+                    question_text=caller_text,
+                    conversation_id=conversation_id,
+                    normalized_text=normalized_text,
+                    detected_language=detect_language(caller_text),
+                )
                 log_event(
                     logger,
                     logging.WARNING,
