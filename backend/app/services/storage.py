@@ -8,6 +8,7 @@ from app.core.logging import mask_phone_number
 from app.models.branch import Branch
 from app.models.call_turn import CallTurn
 from app.models.conversation import Conversation
+from app.models.conversation_summary import ConversationSummary
 from app.models.handoff import Handoff
 from app.models.knowledge_item import KnowledgeItem
 from app.models.lead import Lead
@@ -226,7 +227,9 @@ class TenantStorageService:
         return lead
 
     def complete_conversation(self, conversation_id: UUID) -> None:
-        """Mark a conversation as completed and record its end time."""
+        """Mark a conversation as completed, record its end time, and generate a summary."""
+        from app.services.analytics.call_summary import summarize_conversation, upsert_summary
+
         conv = self.session.scalar(
             select(Conversation).where(
                 Conversation.id == conversation_id,
@@ -237,6 +240,25 @@ class TenantStorageService:
             conv.status = "completed"
             conv.ended_at = datetime.now(timezone.utc)
             self.session.flush()
+            result = summarize_conversation(self.session, conversation_id, self.organization_id)
+            upsert_summary(self.session, result)
+
+    def generate_conversation_summary(self, conversation_id: UUID) -> ConversationSummary:
+        """Compute and persist a summary on demand (for already-completed conversations)."""
+        from app.services.analytics.call_summary import summarize_conversation, upsert_summary
+
+        self._require_owned_conversation(conversation_id)
+        result = summarize_conversation(self.session, conversation_id, self.organization_id)
+        return upsert_summary(self.session, result)
+
+    def get_conversation_summary(self, conversation_id: UUID) -> ConversationSummary | None:
+        """Return the persisted summary for a conversation, or None if not yet generated."""
+        return self.session.scalar(
+            select(ConversationSummary).where(
+                ConversationSummary.conversation_id == conversation_id,
+                ConversationSummary.organization_id == self.organization_id,
+            )
+        )
 
     def create_handoff(
         self,

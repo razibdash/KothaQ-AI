@@ -9,6 +9,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.branch import Branch
     from app.models.conversation import Conversation
+    from app.models.conversation_summary import ConversationSummary
     from app.models.handoff import Handoff
     from app.models.knowledge_item import KnowledgeItem
     from app.models.lead import Lead
@@ -57,6 +58,10 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     handoffs: Mapped[list["Handoff"]] = relationship(
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+    summaries: Mapped[list["ConversationSummary"]] = relationship(
         back_populates="organization",
         cascade="all, delete-orphan",
     )

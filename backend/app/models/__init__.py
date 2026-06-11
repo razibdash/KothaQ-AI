@@ -2,6 +2,7 @@ from app.db.base import Base
 from app.models.branch import Branch
 from app.models.call_turn import CallTurn
 from app.models.conversation import Conversation
+from app.models.conversation_summary import ConversationSummary
 from app.models.handoff import Handoff
 from app.models.knowledge_item import KnowledgeItem
 from app.models.lead import Lead
@@ -14,6 +15,7 @@ __all__ = [
     "Branch",
     "CallTurn",
     "Conversation",
+    "ConversationSummary",
     "Handoff",
     "KnowledgeItem",
     "Lead",

@@ -10,6 +10,7 @@ from app.db.base import Base, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.branch import Branch
     from app.models.call_turn import CallTurn
+    from app.models.conversation_summary import ConversationSummary
     from app.models.handoff import Handoff
     from app.models.lead import Lead
     from app.models.organization import Organization
@@ -59,4 +60,9 @@ class Conversation(UUIDPrimaryKeyMixin, Base):
     handoffs: Mapped[list["Handoff"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
+    )
+    summary: Mapped["ConversationSummary | None"] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
