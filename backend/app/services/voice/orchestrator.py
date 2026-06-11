@@ -8,6 +8,15 @@ from app.core.logging import get_logger, log_event
 from app.services.ai.answer_policy import AnswerPolicyCandidate, evaluate_answer_policy
 from app.services.knowledge.search import normalize_search_text, search_knowledge
 from app.services.language.language_router import choose_response_language, detect_language
+from app.services.leads.capture import (
+    LeadFields,
+    apply_extraction,
+    callback_question,
+    extract_callback_time,
+    is_lead_complete,
+    next_lead_question,
+)
+from app.services.leads.intent import detect_lead_intent
 from app.services.storage import TenantStorageService
 from app.services.tenancy import OrganizationContext
 from app.services.voice.response_style import (
@@ -98,6 +107,85 @@ class VoiceOrchestrator:
                 )
             else:
                 response = unknown_answer_fallback(language, response_style)
+
+            # ------------------------------------------------------------------
+            # Lead capture — runs alongside FAQ; at most one question per turn
+            # ------------------------------------------------------------------
+            lead_follow_up: str | None = None
+            if conversation_id is not None:
+                storage = TenantStorageService(self.session, organization.id)
+                active_lead = storage.get_active_lead(conversation_id)
+                intent = detect_lead_intent(caller_text)
+
+                if active_lead is not None and active_lead.status == "finalizing":
+                    # Caller is responding to the callback-time question
+                    callback_notes = extract_callback_time(caller_text)
+                    storage.finalize_lead(active_lead.id, callback_notes=callback_notes)
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "lead_finalized",
+                        tenant_id=organization.tenant_id,
+                        call_id=call_id,
+                        organization_slug=organization.slug,
+                    )
+                elif active_lead is not None or intent is not None:
+                    # Either continuing an in-progress lead or starting a new one
+                    current_fields = LeadFields(
+                        interest=active_lead.interest if active_lead else None,
+                        name=active_lead.name if active_lead else None,
+                        phone_masked=active_lead.phone_masked if active_lead else None,
+                    )
+                    effective_intent = intent or "general"
+                    updated_fields = apply_extraction(current_fields, caller_text, effective_intent)
+
+                    # Fall back to the intent label itself when no noun phrase extracted
+                    if updated_fields.interest is None and intent is not None:
+                        updated_fields = LeadFields(
+                            interest=intent,
+                            name=updated_fields.name,
+                            phone_masked=updated_fields.phone_masked,
+                        )
+
+                    upserted = storage.upsert_collecting_lead(
+                        conversation_id=conversation_id,
+                        interest=updated_fields.interest,
+                        name=updated_fields.name,
+                        phone_masked=updated_fields.phone_masked,
+                    )
+                    log_event(
+                        logger,
+                        logging.INFO,
+                        "lead_updated",
+                        tenant_id=organization.tenant_id,
+                        call_id=call_id,
+                        organization_slug=organization.slug,
+                        lead_id=str(upserted.id),
+                    )
+
+                    if is_lead_complete(updated_fields):
+                        # Check if callback time was also given in this same utterance
+                        callback_notes = extract_callback_time(caller_text)
+                        if callback_notes:
+                            storage.finalize_lead(upserted.id, callback_notes=callback_notes)
+                            log_event(
+                                logger,
+                                logging.INFO,
+                                "lead_finalized",
+                                tenant_id=organization.tenant_id,
+                                call_id=call_id,
+                                organization_slug=organization.slug,
+                            )
+                        else:
+                            # Transition to finalizing; ask callback question if not handing off
+                            storage.set_lead_status(upserted.id, "finalizing")
+                            if not policy.should_handoff:
+                                lead_follow_up = callback_question(language)
+                    elif not policy.should_handoff:
+                        lead_follow_up = next_lead_question(updated_fields, language)
+
+            if lead_follow_up:
+                response = f"{response} {lead_follow_up}"
 
             log_event(
                 logger,

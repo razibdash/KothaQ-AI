@@ -33,6 +33,7 @@ class Lead(UUIDPrimaryKeyMixin, Base):
         index=True,
     )
     callback_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    callback_notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="new")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

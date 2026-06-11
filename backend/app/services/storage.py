@@ -15,6 +15,8 @@ from app.models.organization import Organization
 from app.models.phone_number import PhoneNumber
 from app.models.unknown_question import UnknownQuestion
 
+_ACTIVE_LEAD_STATUSES = ("collecting", "finalizing")
+
 
 def create_organization(
     session: Session,
@@ -328,6 +330,79 @@ class TenantStorageService:
         )
         if self.session.scalar(statement) is None:
             raise ValueError("branch does not belong to organization")
+
+    def get_active_lead(self, conversation_id: UUID) -> Lead | None:
+        """Return the in-progress lead (collecting or finalizing) for a conversation."""
+        return self.session.scalar(
+            select(Lead).where(
+                Lead.organization_id == self.organization_id,
+                Lead.conversation_id == conversation_id,
+                Lead.status.in_(_ACTIVE_LEAD_STATUSES),
+            )
+        )
+
+    def upsert_collecting_lead(
+        self,
+        *,
+        conversation_id: UUID,
+        interest: str | None = None,
+        name: str | None = None,
+        phone_masked: str | None = None,
+    ) -> Lead:
+        """Create or update the collecting lead for a conversation.
+
+        Only updates fields that are currently None in the DB record so that
+        partial captures from earlier turns are never overwritten.
+        """
+        self._require_owned_conversation(conversation_id)
+        lead = self.get_active_lead(conversation_id)
+        if lead is None:
+            conv = self.session.scalar(
+                select(Conversation).where(Conversation.id == conversation_id)
+            )
+            initial_phone = phone_masked or (conv.caller_phone_masked if conv else None)
+            lead = Lead(
+                organization_id=self.organization_id,
+                conversation_id=conversation_id,
+                phone_masked=initial_phone,
+                status="collecting",
+            )
+            self.session.add(lead)
+            self.session.flush()
+        if interest is not None and lead.interest is None:
+            lead.interest = interest
+        if name is not None and lead.name is None:
+            lead.name = name
+        if phone_masked is not None and lead.phone_masked is None:
+            lead.phone_masked = mask_phone_number(phone_masked)
+        self.session.flush()
+        return lead
+
+    def set_lead_status(self, lead_id: UUID, status: str) -> None:
+        """Transition a lead to the given status."""
+        lead = self.session.scalar(
+            select(Lead).where(
+                Lead.id == lead_id,
+                Lead.organization_id == self.organization_id,
+            )
+        )
+        if lead is not None:
+            lead.status = status
+            self.session.flush()
+
+    def finalize_lead(self, lead_id: UUID, *, callback_notes: str | None = None) -> None:
+        """Mark a lead complete (status='new') and persist any callback preference."""
+        lead = self.session.scalar(
+            select(Lead).where(
+                Lead.id == lead_id,
+                Lead.organization_id == self.organization_id,
+            )
+        )
+        if lead is not None:
+            lead.status = "new"
+            if callback_notes is not None:
+                lead.callback_notes = callback_notes
+            self.session.flush()
 
     def _require_owned_conversation(self, conversation_id: UUID | None) -> None:
         if conversation_id is None:
