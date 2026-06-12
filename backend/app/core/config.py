@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     GROQ_API_KEY: SecretStr | None = None
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
+    # "huggingface" uses a local sentence-transformers model (no API key needed).
+    # "fake" forces the deterministic stub — used in tests and CI.
+    EMBEDDING_PROVIDER: str = "huggingface"
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     TWILIO_AUTH_TOKEN: SecretStr | None = None
     STT_PROVIDER: SpeechProvider = SpeechProvider.MOCK
     TTS_PROVIDER: SpeechProvider = SpeechProvider.MOCK

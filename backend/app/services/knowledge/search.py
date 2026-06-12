@@ -1,3 +1,20 @@
+"""Knowledge search: semantic (primary) with fuzzy fallback.
+
+Search strategy
+---------------
+1. Semantic search  — when langchain-huggingface + sentence-transformers are
+   installed and EMBEDDING_PROVIDER != "fake".  Scores items by cosine
+   similarity of their stored question embeddings against the query embedding.
+   Item embeddings are generated lazily on first search and persisted.
+
+2. Fuzzy search     — always available, no dependencies.  Used when the
+   embedding stack is unavailable (fresh install, test environment, CI).
+   Scores items by token overlap + SequenceMatcher ratio.
+
+Both paths return the same KnowledgeSearchResult type and honour the same
+confidence threshold, so the answer policy and orchestrator are unaffected.
+"""
+
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from uuid import UUID
@@ -24,11 +41,50 @@ class KnowledgeSearchResult:
         return cls(answer=None, confidence=confidence, source_id=None, source_item=None)
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
 def normalize_search_text(text: str) -> str:
     return normalize_text(text, detect_language(text))
 
 
-def _score_candidate(query: str, item: KnowledgeItem) -> float:
+def _branch_belongs_to_organization(
+    session: Session,
+    organization_id: UUID,
+    branch_id: UUID,
+) -> bool:
+    statement = select(Branch.id).where(
+        Branch.id == branch_id,
+        Branch.organization_id == organization_id,
+    )
+    return session.scalar(statement) is not None
+
+
+def _fetch_approved_items(
+    session: Session,
+    organization_id: UUID,
+    branch_id: UUID | None,
+) -> list[KnowledgeItem]:
+    filters = [
+        KnowledgeItem.organization_id == organization_id,
+        KnowledgeItem.status == "approved",
+    ]
+    if branch_id is not None:
+        filters.append(
+            or_(
+                KnowledgeItem.branch_id.is_(None),
+                KnowledgeItem.branch_id == branch_id,
+            )
+        )
+    return list(session.scalars(select(KnowledgeItem).where(*filters)))
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy search (always-available fallback)
+# ---------------------------------------------------------------------------
+
+def _score_fuzzy(query: str, item: KnowledgeItem) -> float:
     normalized_question = normalize_search_text(item.question)
     normalized_tags = normalize_search_text(" ".join(item.tags))
     candidate = " ".join(part for part in (normalized_question, normalized_tags) if part)
@@ -43,9 +99,9 @@ def _score_candidate(query: str, item: KnowledgeItem) -> float:
         exact_match = query_token if query_token in unmatched_candidates else None
         fuzzy_match = exact_match or next(
             (
-                candidate_token
-                for candidate_token in unmatched_candidates
-                if SequenceMatcher(None, query_token, candidate_token).ratio() >= 0.82
+                ct
+                for ct in unmatched_candidates
+                if SequenceMatcher(None, query_token, ct).ratio() >= 0.82
             ),
             None,
         )
@@ -62,17 +118,38 @@ def _score_candidate(query: str, item: KnowledgeItem) -> float:
     return min(score, 1.0)
 
 
-def _branch_belongs_to_organization(
-    session: Session,
-    organization_id: UUID,
-    branch_id: UUID,
-) -> bool:
-    statement = select(Branch.id).where(
-        Branch.id == branch_id,
-        Branch.organization_id == organization_id,
-    )
-    return session.scalar(statement) is not None
+def _fuzzy_search(
+    items: list[KnowledgeItem],
+    query: str,
+    confidence_threshold: float,
+) -> KnowledgeSearchResult:
+    normalized_query = normalize_search_text(query)
+    if not normalized_query or not items:
+        return KnowledgeSearchResult.no_verified_answer()
 
+    best_item: KnowledgeItem | None = None
+    best_score = 0.0
+    for item in items:
+        score = _score_fuzzy(normalized_query, item)
+        if score > best_score:
+            best_item = item
+            best_score = score
+
+    rounded = round(best_score, 4)
+    if best_item is None or rounded < confidence_threshold:
+        return KnowledgeSearchResult.no_verified_answer(rounded)
+
+    return KnowledgeSearchResult(
+        answer=best_item.answer,
+        confidence=rounded,
+        source_id=best_item.id,
+        source_item=best_item,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 def search_knowledge(
     session: Session,
@@ -82,45 +159,26 @@ def search_knowledge(
     branch_id: UUID | None = None,
     confidence_threshold: float = VERIFIED_CONFIDENCE_THRESHOLD,
 ) -> KnowledgeSearchResult:
+    """Search knowledge items for *query* scoped to *organization_id*.
+
+    Uses semantic search (cosine similarity via sentence-transformers) when the
+    embedding stack is available; falls back to fuzzy token matching otherwise.
+    """
     if branch_id is not None and not _branch_belongs_to_organization(
-        session,
-        organization_id,
-        branch_id,
+        session, organization_id, branch_id
     ):
         return KnowledgeSearchResult.no_verified_answer()
 
-    filters = [
-        KnowledgeItem.organization_id == organization_id,
-        KnowledgeItem.status == "approved",
-    ]
-    if branch_id is not None:
-        filters.append(
-            or_(
-                KnowledgeItem.branch_id.is_(None),
-                KnowledgeItem.branch_id == branch_id,
-            )
-        )
-
-    items = list(session.scalars(select(KnowledgeItem).where(*filters)))
-    normalized_query = normalize_search_text(query)
-    if not normalized_query or not items:
+    items = _fetch_approved_items(session, organization_id, branch_id)
+    if not items:
         return KnowledgeSearchResult.no_verified_answer()
 
-    best_item: KnowledgeItem | None = None
-    best_score = 0.0
-    for item in items:
-        score = _score_candidate(normalized_query, item)
-        if score > best_score:
-            best_item = item
-            best_score = score
+    # Lazy import keeps the module importable even when embedding packages are absent.
+    from app.services.ai.embeddings import is_semantic_available  # noqa: PLC0415
 
-    rounded_score = round(best_score, 4)
-    if best_item is None or rounded_score < confidence_threshold:
-        return KnowledgeSearchResult.no_verified_answer(rounded_score)
+    if is_semantic_available():
+        from app.services.knowledge.semantic_search import semantic_search  # noqa: PLC0415
 
-    return KnowledgeSearchResult(
-        answer=best_item.answer,
-        confidence=rounded_score,
-        source_id=best_item.id,
-        source_item=best_item,
-    )
+        return semantic_search(session, items, query, confidence_threshold)
+
+    return _fuzzy_search(items, query, confidence_threshold)

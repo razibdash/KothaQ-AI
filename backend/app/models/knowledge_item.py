@@ -39,6 +39,9 @@ class KnowledgeItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(30), default="draft")
     source_type: Mapped[str] = mapped_column(String(50), default="manual")
     source_reference: Mapped[str | None] = mapped_column(String(500))
+    # Stores a serialised float list produced by the configured embedding model.
+    # NULL means the item has not been embedded yet — search falls back to fuzzy.
+    question_embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
 
     organization: Mapped["Organization"] = relationship(back_populates="knowledge_items")
     branch: Mapped["Branch | None"] = relationship(back_populates="knowledge_items")
