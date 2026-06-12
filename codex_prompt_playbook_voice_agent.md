@@ -59,7 +59,7 @@ Current preferred stack:
 
 Create a file named `AGENTS.md` in the repo root and paste this:
 
-```markdown
+````markdown
 # AGENTS.md
 
 ## Project
@@ -102,6 +102,7 @@ The system answers phone calls using approved organization knowledge bases, capt
 ## Before coding
 
 For any non-trivial task:
+
 1. Inspect the relevant files.
 2. Write a short implementation plan.
 3. Mention risks or assumptions.
@@ -110,6 +111,7 @@ For any non-trivial task:
 ## After coding
 
 Always provide:
+
 1. Summary of changes.
 2. Files changed.
 3. Tests run and results.
@@ -127,9 +129,11 @@ ruff check .
 ruff format --check .
 mypy .
 ```
+````
 
 If any command is unavailable, explain that instead of pretending it passed.
-```
+
+````
 
 ---
 
@@ -167,7 +171,7 @@ After coding:
 - Run tests.
 - Summarize changed files.
 - List remaining risks.
-```
+````
 
 ---
 
@@ -1292,3 +1296,38 @@ Acceptance criteria:
 - Build the learning loop early.
 - Do not overbuild realtime voice before the core answer system is reliable.
 - Start pilots with education institutions because admission questions are repetitive and high-value.
+
+LangChain vs LangGraph — My Decision
+Use LangGraph. Here's why:
+
+LangGraph is built on top of LangChain, so you get everything from LangChain (RAG, document loaders, tool use, Claude/OpenAI integrations) plus stateful graph execution. Your voice agent is already a DAG:
+
+language_detect → knowledge_search → policy → response_style → lead_capture → handoff?
+That is exactly what LangGraph was designed for. The lead capture state machine (collecting → finalizing → captured) maps perfectly to LangGraph nodes with conditional edges. LangChain alone would require you to wire this state machine manually.
+
+Implementation Plan
+Phase 1 — Foundation (1–2 days)
+Add langgraph, langchain-anthropic, langchain-community to pyproject.toml
+Add ANTHROPIC_API_KEY to config.py
+Create backend/app/services/ai/llm_client.py — shared Claude client factory
+Phase 2 — Semantic Knowledge Search (2–3 days)
+Add pgvector + langchain-postgres for vector embeddings
+Replace fuzzy SequenceMatcher in search.py with semantic similarity search
+Keep confidence threshold logic — just feed it cosine similarity score instead
+Phase 3 — Rewrite Orchestrator as LangGraph (3–4 days)
+Convert orchestrator.py to a StateGraph
+Each step becomes a node: detect_language, search_knowledge, evaluate_policy, generate_response, capture_lead, decide_handoff
+Conditional edges replace the if/elif chains — handoff vs. continue, high/low confidence
+Lead capture subgraph handles state transitions
+Phase 4 — LLM Response Generation (1–2 days)
+Replace hardcoded response templates in response_style.py with Claude-generated voice responses
+Language-aware system prompts (Bangla/English/Banglish)
+answer_policy.py stays as a guardrail — LLM generates the text, policy decides whether to send it
+Phase 5 — LLM Intent & Entity Extraction (1–2 days)
+Replace keyword regex in intent.py and extractor.py with LangChain structured output (Pydantic tool calls to Claude)
+Much better name/phone/interest extraction in Bangla and Banglish
+Total estimate: ~10 days of focused work
+
+The architecture is already well-designed for this — the service boundaries are clean. Phase 3 (LangGraph orchestrator) is the biggest win because the existing handle_turn() method is already shaped like a graph.
+
+Want me to start with Phase 1 (add dependencies + LLM client setup)? That's the safest starting point — no breaking changes, just adds the foundation.

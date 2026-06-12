@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     DEFAULT_TENANT_ID: str = "demo"
     HUMAN_HANDOFF_FALLBACK_NUMBER: str | None = None
     OPENAI_API_KEY: SecretStr | None = None
+    GROQ_API_KEY: SecretStr | None = None
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_FAST_MODEL: str = "llama-3.1-8b-instant"
     TWILIO_AUTH_TOKEN: SecretStr | None = None
     STT_PROVIDER: SpeechProvider = SpeechProvider.MOCK
     TTS_PROVIDER: SpeechProvider = SpeechProvider.MOCK
