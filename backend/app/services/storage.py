@@ -19,6 +19,16 @@ from app.models.unknown_question import UnknownQuestion
 _ACTIVE_LEAD_STATUSES = ("collecting", "finalizing")
 
 
+def list_organizations(session: Session) -> list[Organization]:
+    """Return all organizations ordered by name — admin use only."""
+    return list(session.scalars(select(Organization).order_by(Organization.name)))
+
+
+def get_organization_by_slug(session: Session, slug: str) -> Organization | None:
+    """Return a single Organization by slug, or None — admin use only."""
+    return session.scalar(select(Organization).where(Organization.slug == slug))
+
+
 def create_organization(
     session: Session,
     *,
@@ -425,6 +435,67 @@ class TenantStorageService:
             if callback_notes is not None:
                 lead.callback_notes = callback_notes
             self.session.flush()
+
+    # ── Branch admin ─────────────────────────────────────────────────────────
+
+    def list_branches(self) -> list[Branch]:
+        """Return all branches for this organization ordered by name."""
+        return list(
+            self.session.scalars(
+                select(Branch)
+                .where(Branch.organization_id == self.organization_id)
+                .order_by(Branch.name)
+            )
+        )
+
+    def get_branch(self, branch_id: UUID) -> Branch | None:
+        """Return a branch owned by this organization, or None."""
+        return self.session.scalar(
+            select(Branch).where(
+                Branch.id == branch_id,
+                Branch.organization_id == self.organization_id,
+            )
+        )
+
+    def update_branch(self, branch_id: UUID, updates: dict) -> Branch:
+        """Apply ``updates`` dict to the branch.  Raises ValueError if not found."""
+        branch = self.get_branch(branch_id)
+        if branch is None:
+            raise ValueError("branch not found")
+        for key, value in updates.items():
+            setattr(branch, key, value)
+        self.session.flush()
+        return branch
+
+    # ── Knowledge item admin ──────────────────────────────────────────────────
+
+    def get_knowledge_item(self, item_id: UUID) -> KnowledgeItem | None:
+        """Return a knowledge item owned by this organization, or None."""
+        return self.session.scalar(
+            select(KnowledgeItem).where(
+                KnowledgeItem.id == item_id,
+                KnowledgeItem.organization_id == self.organization_id,
+            )
+        )
+
+    def update_knowledge_item(self, item_id: UUID, updates: dict) -> KnowledgeItem:
+        """Apply ``updates`` dict to the knowledge item.  Raises ValueError if not found."""
+        item = self.get_knowledge_item(item_id)
+        if item is None:
+            raise ValueError("knowledge item not found")
+        for key, value in updates.items():
+            setattr(item, key, value)
+        self.session.flush()
+        return item
+
+    def set_knowledge_item_status(self, item_id: UUID, new_status: str) -> KnowledgeItem:
+        """Transition a knowledge item to ``new_status``.  Raises ValueError if not found."""
+        item = self.get_knowledge_item(item_id)
+        if item is None:
+            raise ValueError("knowledge item not found")
+        item.status = new_status
+        self.session.flush()
+        return item
 
     def _require_owned_conversation(self, conversation_id: UUID | None) -> None:
         if conversation_id is None:

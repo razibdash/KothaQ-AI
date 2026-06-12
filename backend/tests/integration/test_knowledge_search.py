@@ -86,7 +86,13 @@ def test_search_returns_only_approved_items_and_rejects_low_confidence(
 
 def test_search_supports_english_bangla_banglish_and_basic_fuzzy_queries(
     db_session: Session,
+    monkeypatch,
 ) -> None:
+    # This test exercises the deterministic fuzzy-search path.
+    # Force semantic search off so the assertions (based on token overlap) hold
+    # regardless of which embedding model is installed.
+    import app.services.ai.embeddings as emb_mod
+    monkeypatch.setattr(emb_mod, "is_semantic_available", lambda: False)
     organization = create_organization(
         db_session,
         slug="multilingual",

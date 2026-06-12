@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     STT_PROVIDER: SpeechProvider = SpeechProvider.MOCK
     TTS_PROVIDER: SpeechProvider = SpeechProvider.MOCK
     DEFAULT_LANGUAGE: str = "bn-BD"
+    # ── Admin API ────────────────────────────────────────────────────────────
+    # Shared secret for admin endpoints.  Must be set before admin routes can
+    # be used.  Replace with proper JWT/OAuth2 auth before going to production.
+    # See app/api/admin_auth.py for the full security notice.
+    ADMIN_SECRET_KEY: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

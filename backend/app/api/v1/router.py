@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.admin.router import admin_router
 from app.api.v1.endpoints import calls, health, knowledge, leads, organizations, unknown_questions, voice
 
 api_router = APIRouter()
@@ -14,3 +15,4 @@ api_router.include_router(
     prefix="/unknown-questions",
     tags=["unknown-questions"],
 )
+api_router.include_router(admin_router)
