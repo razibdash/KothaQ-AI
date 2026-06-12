@@ -2,7 +2,7 @@ Metadata-Version: 2.4
 Name: voice-agent-backend
 Version: 0.1.0
 Summary: Multilingual SaaS voice agent backend
-Requires-Python: >=3.11
+Requires-Python: <3.14,>=3.11
 Requires-Dist: fastapi>=0.115.0
 Requires-Dist: uvicorn[standard]>=0.30.0
 Requires-Dist: pydantic>=2.8.0
@@ -13,6 +13,13 @@ Requires-Dist: alembic>=1.13.0
 Requires-Dist: redis>=5.0.0
 Requires-Dist: httpx>=0.27.0
 Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: langchain-core>=1.0.0
+Requires-Dist: langchain-community>=0.3.0
+Requires-Dist: langchain-groq>=0.3.0
+Requires-Dist: langchain-huggingface>=0.1.0
+Requires-Dist: langgraph>=0.4.0
+Requires-Dist: sentence-transformers>=3.0.0
+Requires-Dist: pgvector>=0.3.0
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pytest-asyncio; extra == "dev"
