@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # "fake" forces the deterministic stub — used in tests and CI.
     EMBEDDING_PROVIDER: str = "huggingface"
     EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # Set to false to use deterministic templates even when GROQ_API_KEY is present.
+    LLM_RESPONSE_ENABLED: bool = True
+    # Hard ceiling for a single LLM call on the voice path (phone callers can't wait long).
+    LLM_RESPONSE_TIMEOUT: float = 8.0
     TWILIO_AUTH_TOKEN: SecretStr | None = None
     STT_PROVIDER: SpeechProvider = SpeechProvider.MOCK
     TTS_PROVIDER: SpeechProvider = SpeechProvider.MOCK

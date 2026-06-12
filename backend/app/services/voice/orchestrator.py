@@ -178,17 +178,22 @@ def _node_style_response(state: VoiceTurnState) -> dict:
     policy: AnswerPolicyResult = state["policy"]
     language = state["detected_language"]
     style = state["response_style"]
-    caller_text = state["caller_text"]
+    include_details = caller_requests_details(state["caller_text"])
+
+    # Lazy import keeps this importable when langchain packages are absent.
+    from app.services.ai.response_generator import (  # noqa: PLC0415
+        generate_handoff_response,
+        generate_voice_response,
+    )
 
     if policy.answer_allowed:
-        text = style_verified_answer(
-            policy.response_text,
-            language,
-            style,
-            include_details=caller_requests_details(caller_text),
+        # generate_voice_response falls back to style_verified_answer when LLM unavailable.
+        text = generate_voice_response(
+            policy.response_text, language, style, include_details=include_details
         )
     else:
-        text = unknown_answer_fallback(language, style)
+        # generate_handoff_response falls back to unknown_answer_fallback when LLM unavailable.
+        text = generate_handoff_response(language, style, reason=policy.reason)
 
     return {"response_text": text}
 
