@@ -49,6 +49,7 @@ app/services/ai/__init__.py
 app/services/ai/answer_policy.py
 app/services/ai/embeddings.py
 app/services/ai/llm_client.py
+app/services/ai/response_generator.py
 app/services/analytics/__init__.py
 app/services/analytics/call_summary.py
 app/services/billing/__init__.py
@@ -65,6 +66,7 @@ app/services/leads/__init__.py
 app/services/leads/capture.py
 app/services/leads/extractor.py
 app/services/leads/intent.py
+app/services/leads/llm_extractor.py
 app/services/telephony/__init__.py
 app/services/telephony/base.py
 app/services/telephony/provider.py

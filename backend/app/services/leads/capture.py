@@ -70,7 +70,17 @@ def extract_name(text: str) -> str | None:
 
 
 def extract_callback_time(text: str) -> str | None:
-    """Extract a free-text callback time preference from caller utterance."""
+    """Extract a free-text callback time preference from caller utterance.
+
+    Tries LLM extraction first (better Bangla/Banglish coverage); falls back
+    to regex patterns when LLM is unavailable.
+    """
+    from app.services.leads.llm_extractor import extract_fields_llm  # noqa: PLC0415
+
+    llm_result = extract_fields_llm(text, "callback")
+    if llm_result and llm_result.callback_time:
+        return llm_result.callback_time
+
     found: list[str] = []
     seen_starts: set[int] = set()
     for pattern in _CALLBACK_PATTERNS:
@@ -108,15 +118,21 @@ def extract_interest(text: str, intent: str) -> str | None:
 def apply_extraction(fields: LeadFields, text: str, intent: str) -> LeadFields:
     """Return updated LeadFields with any new values extractable from caller text.
 
-    Existing non-None fields are never overwritten.
+    Tries LLM structured extraction first (one call for name + interest); falls
+    back to regex/pattern helpers when LLM is unavailable.  Existing non-None
+    fields are never overwritten.
     """
+    from app.services.leads.llm_extractor import extract_fields_llm  # noqa: PLC0415
+
+    llm_result = extract_fields_llm(text, intent)
+
     updates: dict = {}
     if fields.name is None:
-        name = extract_name(text)
+        name = (llm_result.name if llm_result else None) or extract_name(text)
         if name:
             updates["name"] = name
     if fields.interest is None:
-        interest = extract_interest(text, intent)
+        interest = (llm_result.interest if llm_result else None) or extract_interest(text, intent)
         if interest:
             updates["interest"] = interest
     return replace(fields, **updates) if updates else fields
