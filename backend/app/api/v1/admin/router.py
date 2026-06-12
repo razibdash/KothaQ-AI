@@ -12,6 +12,7 @@ PATCH /admin/organizations/{org_slug}/branches/{branch_id}     update branch
 
 GET   /admin/organizations/{org_slug}/knowledge                list items
 POST  /admin/organizations/{org_slug}/knowledge                create item
+POST  /admin/organizations/{org_slug}/knowledge/import-csv     import CSV
 GET   /admin/organizations/{org_slug}/knowledge/{item_id}      get item
 PATCH /admin/organizations/{org_slug}/knowledge/{item_id}      update item
 POST  /admin/organizations/{org_slug}/knowledge/{item_id}/approve  → approved

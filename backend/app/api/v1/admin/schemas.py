@@ -164,3 +164,16 @@ class KnowledgeItemStatusResponse(BaseModel):
 
     id: UUID
     status: str
+
+
+class KnowledgeCsvImportErrorRead(BaseModel):
+    row_number: int
+    field: str
+    message: str
+
+
+class KnowledgeCsvImportResponse(BaseModel):
+    imported_count: int
+    skipped_count: int
+    errors: list[KnowledgeCsvImportErrorRead]
+    imported_items: list[KnowledgeItemRead]

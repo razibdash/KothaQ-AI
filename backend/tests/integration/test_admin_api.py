@@ -35,6 +35,10 @@ _HEADERS = {"X-Admin-Secret": _SECRET}
 _BASE = "/api/v1/admin"
 
 
+def _csv_file(csv_text: str) -> dict:
+    return {"file": ("knowledge.csv", csv_text, "text/csv")}
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -73,7 +77,7 @@ def org_a(db_session: Session):
     )
     db_session.flush()
     storage = TenantStorageService(db_session, org.id)
-    branch = storage.create_branch(slug="main", name="Main Campus")
+    storage.create_branch(slug="main", name="Main Campus")
     storage.create_knowledge_item(
         question="What are your office hours?",
         answer="Monday to Friday, 9am to 5pm.",
@@ -448,6 +452,135 @@ class TestKnowledgeItems:
             json={"answer": "Hijacked."},
         )
         assert r.status_code == 404
+
+
+class TestKnowledgeCsvImport:
+    def test_valid_import_defaults_draft_and_honors_approved(
+        self, admin_client: TestClient, org_a, db_session: Session
+    ) -> None:
+        csv_text = (
+            "question,answer,language,branch_slug,tags,status,source_reference\n"
+            "When is tuition due?,Tuition is due by 10 January.,en-US,main,"
+            "billing;tuition,,tuition-2026\n"
+            "How do I apply?,Apply through the admissions portal.,en-US,,"
+            "admissions,approved,apply-2026\n"
+        )
+
+        r = admin_client.post(
+            f"{_BASE}/organizations/org-alpha/knowledge/import-csv",
+            files=_csv_file(csv_text),
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_count"] == 2
+        assert data["skipped_count"] == 0
+        assert data["errors"] == []
+        by_question = {item["question"]: item for item in data["imported_items"]}
+        assert by_question["When is tuition due?"]["status"] == "draft"
+        assert by_question["When is tuition due?"]["tags"] == ["billing", "tuition"]
+        assert by_question["How do I apply?"]["status"] == "approved"
+
+        storage = TenantStorageService(db_session, org_a.id)
+        assert len(storage.list_knowledge_items()) == 3
+
+    def test_invalid_rows_are_reported_and_not_imported(
+        self, admin_client: TestClient, org_a, db_session: Session
+    ) -> None:
+        csv_text = (
+            "question,answer,language,branch_slug,tags,status,source_reference\n"
+            "Valid import,Valid answer,en-US,,,,valid-ref\n"
+            "Missing answer,,en-US,,,,missing-answer\n"
+            ",Missing question answer,en-US,,,,missing-question\n"
+            "Unknown branch,Answer,en-US,not-here,,,unknown-branch\n"
+            "Bad status,Answer,en-US,,,published,bad-status\n"
+        )
+
+        r = admin_client.post(
+            f"{_BASE}/organizations/org-alpha/knowledge/import-csv",
+            files=_csv_file(csv_text),
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_count"] == 1
+        assert data["skipped_count"] == 4
+        error_fields = {(error["row_number"], error["field"]) for error in data["errors"]}
+        assert (3, "answer") in error_fields
+        assert (4, "question") in error_fields
+        assert (5, "branch_slug") in error_fields
+        assert (6, "status") in error_fields
+
+        questions = {
+            item.question
+            for item in TenantStorageService(db_session, org_a.id).list_knowledge_items()
+        }
+        assert "Valid import" in questions
+        assert "Missing answer" not in questions
+        assert "Unknown branch" not in questions
+        assert "Bad status" not in questions
+
+    def test_duplicate_rows_are_reported_and_skipped(
+        self, admin_client: TestClient, org_a, db_session: Session
+    ) -> None:
+        csv_text = (
+            "question,answer,language,branch_slug,tags,status,source_reference\n"
+            "What are your office hours?,Different answer,en-US,,,,office-copy\n"
+            "New source ref question,Answer,en-US,,,,dup-ref\n"
+            "Another source ref question,Answer,en-US,,,,dup-ref\n"
+        )
+
+        r = admin_client.post(
+            f"{_BASE}/organizations/org-alpha/knowledge/import-csv",
+            files=_csv_file(csv_text),
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_count"] == 1
+        assert data["skipped_count"] == 2
+        error_fields = {(error["row_number"], error["field"]) for error in data["errors"]}
+        assert (2, "question") in error_fields
+        assert (4, "source_reference") in error_fields
+
+        questions = {
+            item.question
+            for item in TenantStorageService(db_session, org_a.id).list_knowledge_items()
+        }
+        assert "New source ref question" in questions
+        assert "Another source ref question" not in questions
+
+    def test_import_duplicate_checks_and_branch_lookup_are_tenant_scoped(
+        self, admin_client: TestClient, org_a, org_b, db_session: Session
+    ) -> None:
+        csv_text = (
+            "question,answer,language,branch_slug,tags,status,source_reference\n"
+            "What are your office hours?,Org beta answer,en-US,,,,beta-office\n"
+            "Branch from another org,Answer,en-US,main,,,foreign-branch\n"
+        )
+
+        r = admin_client.post(
+            f"{_BASE}/organizations/org-beta/knowledge/import-csv",
+            files=_csv_file(csv_text),
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["imported_count"] == 1
+        assert data["skipped_count"] == 1
+        assert data["errors"][0]["field"] == "branch_slug"
+
+        org_a_questions = {
+            item.question
+            for item in TenantStorageService(db_session, org_a.id).list_knowledge_items()
+        }
+        org_b_questions = {
+            item.question
+            for item in TenantStorageService(db_session, org_b.id).list_knowledge_items()
+        }
+        assert "What are your office hours?" in org_a_questions
+        assert "What are your office hours?" in org_b_questions
+        assert "Branch from another org" not in org_b_questions
 
 
 # ---------------------------------------------------------------------------

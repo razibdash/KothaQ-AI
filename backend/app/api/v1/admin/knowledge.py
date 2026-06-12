@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import DatabaseSession
 from app.api.v1.admin.schemas import (
+    KnowledgeCsvImportErrorRead,
+    KnowledgeCsvImportResponse,
     KnowledgeItemCreate,
     KnowledgeItemRead,
     KnowledgeItemStatusResponse,
     KnowledgeItemUpdate,
     _VALID_KNOWLEDGE_STATUSES,
 )
+from app.services.knowledge.csv_import import import_knowledge_items_from_csv
 from app.services.storage import TenantStorageService, get_organization_by_slug
 
 router = APIRouter()
@@ -101,6 +104,65 @@ def create_knowledge_item(
         session.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return KnowledgeItemRead.model_validate(item)
+
+
+@router.post(
+    "/import-csv",
+    response_model=KnowledgeCsvImportResponse,
+    summary="Import knowledge items from CSV",
+    description=(
+        "Imports valid CSV rows for the organization and returns row-level errors "
+        "for rows that were skipped. Required columns: question, answer, language."
+    ),
+)
+async def import_knowledge_items_csv(
+    org_slug: str,
+    session: DatabaseSession,
+    file: UploadFile = File(...),
+) -> KnowledgeCsvImportResponse:
+    org = get_organization_by_slug(session, org_slug)
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization '{org_slug}' not found.",
+        )
+    try:
+        csv_text = (await file.read()).decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="CSV must be UTF-8 encoded.",
+        ) from exc
+
+    try:
+        result = import_knowledge_items_from_csv(session, org.id, csv_text)
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return KnowledgeCsvImportResponse(
+        imported_count=result.imported_count,
+        skipped_count=result.skipped_count,
+        errors=[
+            KnowledgeCsvImportErrorRead(
+                row_number=error.row_number,
+                field=error.field,
+                message=error.message,
+            )
+            for error in result.errors
+        ],
+        imported_items=[
+            KnowledgeItemRead.model_validate(item)
+            for item in result.imported_items
+        ],
+    )
 
 
 @router.get(
